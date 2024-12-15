@@ -11,9 +11,11 @@ const doctorSchema=new Schema({
         phone:Number,
         address:String,
         offlineChamber:String,
-        designation:String
+        designation:String,
+        email:String
     },
     appointmentLimit:Number,
+    fee:Number,
     applyForAppointments:[
         {
             type:Schema.Types.ObjectId,

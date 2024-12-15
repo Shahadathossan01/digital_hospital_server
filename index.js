@@ -6,17 +6,19 @@ const connectDB = require('./db')
 const User = require('./models/User')
 const bcrypt = require('bcrypt')
 const jwt = require('jsonwebtoken');
+
 const Patient = require('./models/Patient')
 const Doctor = require('./models/Doctor')
 const Admin = require('./models/Admin')
 const error = require('./utils/error')
-const PatientProfile = require('./models/PatientProfile')
 const Appointment = require('./models/Appointment')
 const TestRecommendation = require('./models/TestRecommendation')
 const MedicinInstruction = require('./models/MedicinInstruction')
 const Prescription = require('./models/Prescription')
 const TestResult = require('./models/TestResult')
 const ApplyForAppointment = require('./models/ApplyForAppointment')
+const upload = require('./middlewares/multer.middleware')
+const uploadOnCloudinary=require('./utils/cloudinary')
 app.use(cors())
 app.use(express.json())
 
@@ -99,7 +101,12 @@ app.get('/patient/:id',async(req,res)=>{
         path: 'appointments',
         populate: [
             { path: 'testRecommendation' },
-            { path: 'testResults' }
+            { path: 'testResults' },
+            {path:'patient'},
+            {path:'doctor'},
+            {path:'prescription',
+                populate:'medicinInstructions'
+            }
         ]
     }).populate('medicalRecords')
     res.status(200).json(user)
@@ -147,6 +154,23 @@ app.patch('/patientAppointment/:id',async(req,res)=>{
 })
 
 /**Doctor */
+app.get('/doctors',async(req,res,next)=>{
+    try{
+        const doctors=await Doctor.find().populate('applyForAppointments').populate({
+            path:'appointments',
+            populate:[
+                {path:'testRecommendation'},
+                {path:'testResults'},
+                {path:'prescription',
+                    populate:'medicinInstructions'
+                }
+            ]
+        })
+        res.status(200).json(doctors)
+    }catch(e){
+        next(error)
+    }
+})
 app.get('/doctor/:id',async(req,res)=>{
     const {id}=req.params
     const doctor=await Doctor.findById(id).populate('applyForAppointments')
@@ -157,6 +181,9 @@ app.patch('/doctor/:id',async(req,res)=>{
     const updateFields = Object.keys(req.body).reduce((acc, key) => {
         acc[`profile.${key}`] = req.body[key];
         if(key=='appointmentLimit'){
+            acc[key]=req.body[key]
+        }
+        if(key=='fee'){
             acc[key]=req.body[key]
         }
         return acc;
@@ -224,7 +251,7 @@ app.post('/appointment',async(req,res)=>{
             time,
             googleMeetLink,
             patient:patientID,
-            doctor:doctorID
+            doctor:doctorID,
         })
         res.status(200).json(appointment)
     }catch(e){
@@ -262,12 +289,13 @@ app.patch('/appointments/:id',async(req,res)=>{
     res.status(200).json({message:'Updated Successfully',updatedAppointment})
 })
 
+
 /**TestRecommendation */
 app.post('/testRecommendations',async(req,res)=>{
-    const {testName,appointmentID}=req.body
-
+    const {testName,image,appointmentID}=req.body
     const testRecommendation=await TestRecommendation.create({
-        testName
+        testName,
+        image
     })
     await Appointment.findByIdAndUpdate(
         appointmentID,
@@ -276,14 +304,19 @@ app.post('/testRecommendations',async(req,res)=>{
     )
     res.status(200).json(testRecommendation)
 })
-app.patch('/testRecommendations/:id',async(req,res)=>{
+
+app.patch('/testRecommendations/:id',upload.single('image'),async(req,res)=>{
     const {id}=req.params
-    const {testName}=req.body
+    const localFilePath=req.file.path //uploads\1734292049754-download.jpeg
+    const cloudinaryResponse=await uploadOnCloudinary(localFilePath)
+    const imageUrl=cloudinaryResponse.url 
+
     const updatedTest=await TestRecommendation.findByIdAndUpdate(id,{
-        $set:{testName}
+        $set:{image:imageUrl}
     },{new:true})
-    res.status(200).json({message:'Updated Successfully'})
+    res.status(200).json({message:'Updated Successfully',updatedTest})
 })
+
 app.delete('/testRecommendations/:id',async(req,res)=>{
     const {id}=req.params
     const deletedTest=await TestRecommendation.findByIdAndDelete(id)
@@ -294,12 +327,14 @@ app.delete('/testRecommendations/:id',async(req,res)=>{
 app.post('/prescriptions',async(req,res)=>{
     const {date,diagnosis,instruction,appointmentID}=req.body
     const prescription=await Prescription.create({
-        date,
+        date:date || new Date(),
         diagnosis,
-        instruction
+        instruction:instruction ||''
     })
+    const appointment=await Appointment.findById(appointmentID)
+    if(appointment.prescription) return res.status(400).json({message:'Already create an prescription'})
     await Appointment.findByIdAndUpdate(appointmentID,{
-        $push:{prescription:prescription._id}
+        $set:{prescription:prescription._id}
     })
     res.status(200).json(prescription)
 })
