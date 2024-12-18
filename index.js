@@ -6,6 +6,11 @@ const connectDB = require('./db')
 const User = require('./models/User')
 const bcrypt = require('bcrypt')
 const jwt = require('jsonwebtoken');
+const SSLCommerzPayment = require('sslcommerz-lts')
+const store_id = 'meetu674077e4148f5'
+const store_passwd = 'meetu674077e4148f5@ssl'
+const is_live = false //true for live, false for sandbox
+const { v4: uuidv4 } = require('uuid');
 
 const Patient = require('./models/Patient')
 const Doctor = require('./models/Doctor')
@@ -19,6 +24,7 @@ const TestResult = require('./models/TestResult')
 const ApplyForAppointment = require('./models/ApplyForAppointment')
 const upload = require('./middlewares/multer.middleware')
 const uploadOnCloudinary=require('./utils/cloudinary')
+const MedicalRecord = require('./models/MedicalRecord')
 app.use(cors())
 app.use(express.json())
 
@@ -101,7 +107,6 @@ app.get('/patient/:id',async(req,res)=>{
         path: 'appointments',
         populate: [
             { path: 'testRecommendation' },
-            { path: 'testResults' },
             {path:'patient'},
             {path:'doctor'},
             {path:'prescription',
@@ -141,6 +146,12 @@ app.patch('/patientAppointment/:id',async(req,res)=>{
         $pull:{appointments:appointmentID}
     },{new:true})
 
+    if(updatedAppointment){
+        await MedicalRecord.create({
+            medicalRecord:appointmentID
+        })
+    }
+
     /**If permanently delete Appointment */
     // const doctor=await Doctor.findOne({
     //     _id:doctorID,
@@ -160,7 +171,6 @@ app.get('/doctors',async(req,res,next)=>{
             path:'appointments',
             populate:[
                 {path:'testRecommendation'},
-                {path:'testResults'},
                 {path:'prescription',
                     populate:'medicinInstructions'
                 }
@@ -264,13 +274,18 @@ app.get('/appointments',async(req,res)=>{
         populate: {
             path: 'medicinInstructions', 
         },
-    }).populate('testResults')
+    })
     res.status(200).json(appointment)
 })
 app.delete('/appointments/:id',async(req,res)=>{
     const {id}=req.params
     const deletedAppointment=await Appointment.findByIdAndDelete(id)
     res.status(200).json({message:"Deleted Successfully!"})
+    if(deletedAppointment){
+        await MedicalRecord.create({
+            medicalRecord:id
+        })
+    }
 })
 app.patch('/appointments/:id',async(req,res)=>{
     const {id}=req.params
@@ -391,33 +406,33 @@ app.delete('/medicinInstructions/:id',async(req,res)=>{
 })
 
 /**TestResults */
-app.post('/testResults',async(req,res)=>{
-    const {name,image,appointmentID}=req.body
-    const testResult=await TestResult.create({
-        name,
-        image
-    })
-    await Appointment.findByIdAndUpdate(appointmentID,{
-        $push:{testResults:testResult._id}
-    })
-    res.status(200).json(testResult)
-})
-app.patch('/testResults/:id',async(req,res)=>{
-    const {id}=req.params
-    const {name,image}=req.body
-    const updatedTest=await TestResult.findByIdAndUpdate(id,{
-        $set:{
-            name,
-            image
-        }
-    },{new:true})
-    res.status(200).json({message:'Updated Successfully'})
-})
-app.delete('/testResults/:id',async(req,res)=>{
-    const {id}=req.params
-    const deletedTest=await TestResult.findByIdAndDelete(id)
-    res.status(200).json({message:'Deleted Successfully'})
-})
+// app.post('/testResults',async(req,res)=>{
+//     const {name,image,appointmentID}=req.body
+//     const testResult=await TestResult.create({
+//         name,
+//         image
+//     })
+//     await Appointment.findByIdAndUpdate(appointmentID,{
+//         $push:{testResults:testResult._id}
+//     })
+//     res.status(200).json(testResult)
+// })
+// app.patch('/testResults/:id',async(req,res)=>{
+//     const {id}=req.params
+//     const {name,image}=req.body
+//     const updatedTest=await TestResult.findByIdAndUpdate(id,{
+//         $set:{
+//             name,
+//             image
+//         }
+//     },{new:true})
+//     res.status(200).json({message:'Updated Successfully'})
+// })
+// app.delete('/testResults/:id',async(req,res)=>{
+//     const {id}=req.params
+//     const deletedTest=await TestResult.findByIdAndDelete(id)
+//     res.status(200).json({message:'Deleted Successfully'})
+// })
 
 /**Apply for Appointment */
 app.post('/applyForAppointments',async(req,res)=>{
@@ -445,7 +460,6 @@ app.post('/applyForAppointments',async(req,res)=>{
 app.patch('/applyForAppointments/:id',async(req,res)=>{
     const {id}=req.params
     const {status}=req.body
-    console.log(status)
     const updatedApply=await ApplyForAppointment.findByIdAndUpdate(id,{
         $set:{status}
     },{new:true})
@@ -457,12 +471,131 @@ app.delete('/applyForAppointments/:id',async(req,res)=>{
     res.status(200).json({message:'Deleted Successfully'})
 })
 
+/**Medical Record */
+app.post('/medicalRecord',async(req,res)=>{
+    const {appointmentID}=req.body
+    const medicalRecord=await MedicalRecord.create({
+        medicalRecord:appointmentID
+    })
+    res.status(200).json(medicalRecord)
+})
+app.get('/medicalRecord',async(req,res)=>{
+    const medicalRecord=await MedicalRecord.find().populate({
+        path:'medicalRecord',
+        populate:[
+            {path:'patient'},
+            {path:'doctor'},
+            {path:'testRecommendation'},
+            {path:'prescription',
+                populate:'medicinInstructions'
+            }
+        ]
+    })
+    res.status(200).json(medicalRecord)
+})
 app.use((err,req,res,next)=>{
     console.log(err)
     const message=err.message?err.message:'Server Error Occurred';
     const status=err.status?err.status:500
     res.status(status).json({message})
 })
+
+/**SSL Commerz */
+let applyAppointmentID=null;
+let appointmentID=null;
+app.post('/initApplyForPayment', async(req, res) => {
+    const {patientID,doctorID,patientName,fee}=req.body
+    const applyForAppointment=await ApplyForAppointment.create({
+        date:new Date(),
+        patientName,
+        doctorID,
+        status:'Unpayed'
+    })
+    applyAppointmentID=applyForAppointment._id
+    await Doctor.findByIdAndUpdate(doctorID,{
+        $push:{applyForAppointments:applyForAppointment._id}
+    },)
+
+    const appointment= await Appointment.create({
+        patient:patientID,
+        doctor:doctorID
+    })
+    appointmentID=appointment._id
+
+    await Patient.findByIdAndUpdate(patientID,{
+        $push:{appointments:appointment._id}
+    })
+    const data = {
+        total_amount: fee,
+        currency: 'BDT',
+        tran_id: uuidv4(), // use unique tran_id for each api call
+        success_url: 'http://localhost:3000/success',
+        fail_url: 'http://localhost:3000/fail',
+        cancel_url: 'http://localhost:3000/cancel',
+        ipn_url: 'http://localhost:3030/ipn',
+        shipping_method: 'Courier',
+        product_name: 'Computer.',
+        product_category: 'Electronic',
+        product_profile: 'general',
+        cus_name: 'Customer Name',
+        cus_email: 'customer@example.com',
+        cus_add1: 'Dhaka',
+        cus_add2: 'Dhaka',
+        cus_city: 'Dhaka',
+        cus_state: 'Dhaka',
+        cus_postcode: '1000',
+        cus_country: 'Bangladesh',
+        cus_phone: '01711111111',
+        cus_fax: '01711111111',
+        ship_name: 'Customer Name',
+        ship_add1: 'Dhaka',
+        ship_add2: 'Dhaka',
+        ship_city: 'Dhaka',
+        ship_state: 'Dhaka',
+        ship_postcode: 1000,
+        ship_country: 'Bangladesh',
+    };
+
+    app.post('/success',async(req,res)=>{
+        await ApplyForAppointment.findByIdAndUpdate(applyAppointmentID,{
+            $set:{status:'Payed'}
+        },{new:true})
+        res.redirect('http://localhost:5173/success')
+    })
+    app.post('/cancel',async(req,res)=>{
+        await ApplyForAppointment.findByIdAndDelete(applyAppointmentID)
+        await Doctor.findByIdAndUpdate(doctorID,{
+            $pull:{applyForAppointments:applyAppointmentID}
+        },)
+        await Appointment.findByIdAndDelete(appointmentID)
+        await Patient.findByIdAndUpdate(patientID,{
+            $pull:{appointments:appointmentID}
+        })
+        res.redirect('http://localhost:5173/cancel')
+    })
+    app.post('/fail',async(req,res)=>{
+        await ApplyForAppointment.findByIdAndDelete(applyAppointmentID)
+        await Doctor.findByIdAndUpdate(doctorID,{
+            $pull:{applyForAppointments:applyAppointmentID}
+        },)
+        await Appointment.findByIdAndDelete(appointmentID)
+        await Patient.findByIdAndUpdate(patientID,{
+            $pull:{appointments:appointmentID}
+        })
+        res.redirect('http://localhost:5173/fail')
+    })
+
+
+    const sslcz = new SSLCommerzPayment(store_id, store_passwd, is_live)
+    sslcz.init(data).then(apiResponse => {
+        // Redirect the user to payment gateway
+        let GatewayPageURL = apiResponse.GatewayPageURL
+        res.status(200).json(GatewayPageURL)
+        // res.redirect(GatewayPageURL)
+        // console.log('Redirecting to: ', GatewayPageURL)
+    });
+})
+
 
 connectDB('mongodb+srv://hossantopu:hdp5nONqO369IUbK@digitalhospital.iatbk.mongodb.net/digital_hospital')
 .then(()=>{

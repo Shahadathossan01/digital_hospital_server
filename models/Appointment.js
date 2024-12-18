@@ -26,13 +26,7 @@ const appointmentSchema=new Schema({
     prescription:{
         type:Schema.Types.ObjectId,
         ref:'Prescription'
-    },
-    testResults:[
-        {
-            type:Schema.Types.ObjectId,
-            ref:'TestResult'
-        }
-    ]
+    }
 })
 const Appointment=model('Appointment',appointmentSchema)
 
