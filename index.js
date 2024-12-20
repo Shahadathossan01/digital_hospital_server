@@ -183,7 +183,17 @@ app.get('/doctors',async(req,res,next)=>{
 })
 app.get('/doctor/:id',async(req,res)=>{
     const {id}=req.params
-    const doctor=await Doctor.findById(id).populate('applyForAppointments')
+    const doctor=await Doctor.findById(id).populate('applyForAppointments').populate({
+        path: 'appointments',
+        populate: [
+            { path: 'testRecommendation' },
+            {path:'patient'},
+            {path:'doctor'},
+            {path:'prescription',
+                populate:'medicinInstructions'
+            }
+        ]
+    })
     res.status(200).json(doctor)
 })
 app.patch('/doctor/:id',async(req,res)=>{
@@ -251,6 +261,7 @@ app.patch('/admin/:id',async(req,res)=>{
 
 /**Appointment */
 app.post('/appointment',async(req,res)=>{
+    console.log(req.body)
     const {date, time, googleMeetLink, patientID, doctorID}=req.body
     try{
         if (!date || !time || !googleMeetLink || !patientID || !doctorID) {
@@ -289,7 +300,7 @@ app.delete('/appointments/:id',async(req,res)=>{
 })
 app.patch('/appointments/:id',async(req,res)=>{
     const {id}=req.params
-    const {date,time,googleMeetLink,status}=req.body
+    const {date,time,googleMeetLink,reqApplyedID,status}=req.body
     const updatedAppointment=await Appointment.findByIdAndUpdate(id,{
         $set: {
             date,
@@ -300,6 +311,10 @@ app.patch('/appointments/:id',async(req,res)=>{
     },{new:true})
     await Doctor.findByIdAndUpdate(updatedAppointment.doctor,{
         $push:{appointments:updatedAppointment._id}
+    })
+    await ApplyForAppointment.findByIdAndDelete(reqApplyedID)
+    await Doctor.findByIdAndUpdate(updatedAppointment.doctor,{
+        $pull:{applyForAppointments:reqApplyedID}
     })
     res.status(200).json({message:'Updated Successfully',updatedAppointment})
 })
@@ -437,20 +452,21 @@ app.delete('/medicinInstructions/:id',async(req,res)=>{
 /**Apply for Appointment */
 app.post('/applyForAppointments',async(req,res)=>{
     const {date,patientName,doctorID,status,patientID}=req.body
+    const appointment= await Appointment.create({
+        patient:patientID,
+        doctor:doctorID
+    })
     const applyForAppointment=await ApplyForAppointment.create({
         date,
         patientName,
         doctorID,
+        appointmentID:appointment._id,
         status
     })
     await Doctor.findByIdAndUpdate(doctorID,{
         $push:{applyForAppointments:applyForAppointment._id}
     },)
 
-    const appointment= await Appointment.create({
-        patient:patientID,
-        doctor:doctorID
-    })
 
     await Patient.findByIdAndUpdate(patientID,{
         $push:{appointments:appointment._id}
@@ -468,6 +484,14 @@ app.patch('/applyForAppointments/:id',async(req,res)=>{
 app.delete('/applyForAppointments/:id',async(req,res)=>{
     const {id}=req.params
     const deletedApply=await ApplyForAppointment.findByIdAndDelete(id)
+    await Appointment.findByIdAndUpdate(deletedApply.appointmentID,{
+        $set:{
+            status:'Canceled'
+        }
+    })
+    await Doctor.findByIdAndUpdate(deletedApply.doctorID,{
+        $pull:{applyForAppointments:deletedApply._id}
+    })
     res.status(200).json({message:'Deleted Successfully'})
 })
 
@@ -505,25 +529,25 @@ let applyAppointmentID=null;
 let appointmentID=null;
 app.post('/initApplyForPayment', async(req, res) => {
     const {patientID,doctorID,patientName,fee}=req.body
-    const applyForAppointment=await ApplyForAppointment.create({
-        date:new Date(),
-        patientName,
-        doctorID,
-        status:'Unpayed'
-    })
-    applyAppointmentID=applyForAppointment._id
-    await Doctor.findByIdAndUpdate(doctorID,{
-        $push:{applyForAppointments:applyForAppointment._id}
-    },)
-
     const appointment= await Appointment.create({
         patient:patientID,
         doctor:doctorID
     })
     appointmentID=appointment._id
+    const applyForAppointment=await ApplyForAppointment.create({
+        date:new Date(),
+        patientName,
+        doctorID,
+        appointmentID:appointmentID,
+        status:'Unpayed'
+    })
+    applyAppointmentID=applyForAppointment._id
+    await Doctor.findByIdAndUpdate(doctorID,{
+        $push:{applyForAppointments:applyAppointmentID}
+    },)
 
     await Patient.findByIdAndUpdate(patientID,{
-        $push:{appointments:appointment._id}
+        $push:{appointments:appointmentID}
     })
     const data = {
         total_amount: fee,

@@ -6,6 +6,7 @@ const applyForAppointmentSchema=new Schema({
     date:Date,
     patientName:String,
     doctorID:String,
+    appointmentID:String,
     status:{
         type:String,
         default:'Unpayed'
