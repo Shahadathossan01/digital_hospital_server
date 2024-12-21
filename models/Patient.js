@@ -7,7 +7,6 @@ const patientSchema=new Schema({
     profile:{
         firstName:String,
         lastName:String,
-        avator:String,
         phone:Number,
         address:String,
         dateOfBirth:String,
@@ -23,10 +22,7 @@ const patientSchema=new Schema({
             ref:'Appointment'
         }
     ],
-    medicalRecords:{
-        type:Schema.Types.ObjectId,
-        ref:'MedicalRecord'
-    }
+    image:String || ""
 })
 
 const Patient=model('Patient',patientSchema);

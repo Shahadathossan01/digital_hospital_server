@@ -6,7 +6,6 @@ const doctorSchema=new Schema({
     profile:{
         firstName:String,
         lastName:String,
-        avator:String,
         specialization:String,
         phone:Number,
         address:String,
@@ -16,6 +15,7 @@ const doctorSchema=new Schema({
     },
     appointmentLimit:Number,
     fee:Number,
+    image:String,
     applyForAppointments:[
         {
             type:Schema.Types.ObjectId,

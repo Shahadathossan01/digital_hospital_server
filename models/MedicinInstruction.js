@@ -5,7 +5,7 @@ const medicinInstruction=new Schema({
     medicinName:String,
     dosage:String,
     frequency:String,
-    duration:Number
+    duration:String
 })
 const MedicinInstruction=model('MedicinInstruction',medicinInstruction)
 

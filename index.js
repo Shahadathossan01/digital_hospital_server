@@ -50,10 +50,12 @@ app.post('/register',async(req,res,next)=>{
         const hash=bcrypt.hashSync(password,salt)
         user.password=hash
         user.role==='patient' && await Patient.create({
-            _id:user._id
+            _id:user._id,
+            image:''
         })
         user.role==='doctor' && await Doctor.create({
-            _id:user._id
+            _id:user._id,
+            image:''
         })
         user.role==='admin' && await Admin.create({
             _id:user._id
@@ -113,7 +115,7 @@ app.get('/patient/:id',async(req,res)=>{
                 populate:'medicinInstructions'
             }
         ]
-    }).populate('medicalRecords')
+    })
     res.status(200).json(user)
 })
 app.patch('/patient/:id',async(req,res,error)=>{
@@ -162,6 +164,18 @@ app.patch('/patientAppointment/:id',async(req,res)=>{
     // }
 
     res.status(200).json({message:'Updated Successfully'})
+})
+app.patch('/patientImage/:id',upload.single('image'),async(req,res)=>{
+    const {id}=req.params
+    const localFilePath=req.file?.path
+    const cloudinaryResponse=await uploadOnCloudinary(localFilePath)
+    const imageUrl=cloudinaryResponse.url 
+    await Patient.findByIdAndUpdate(id,{
+        $set:{
+            image:imageUrl
+        }
+    })
+    res.status(200).json({message:'update successfully'})
 })
 
 /**Doctor */
@@ -235,6 +249,18 @@ app.patch('/doctorAppointment/:id',async(req,res)=>{
     //     await Appointment.findByIdAndDelete(appointmentID)
     // }
     res.status(200).json({message:'Updated Successfully'})
+})
+app.patch('/doctorImage/:id',upload.single('image'),async(req,res)=>{
+    const {id}=req.params
+    const localFilePath=req.file?.path
+    const cloudinaryResponse=await uploadOnCloudinary(localFilePath)
+    const imageUrl=cloudinaryResponse.url 
+    await Doctor.findByIdAndUpdate(id,{
+        $set:{
+            image:imageUrl
+        }
+    })
+    res.status(200).json({message:'update successfully'})
 })
 
 /**Admin */
@@ -322,13 +348,13 @@ app.patch('/appointments/:id',async(req,res)=>{
 
 /**TestRecommendation */
 app.post('/testRecommendations',async(req,res)=>{
-    const {testName,image,appointmentID}=req.body
+    const {testName,image,apppintmentID}=req.body
     const testRecommendation=await TestRecommendation.create({
         testName,
         image
     })
     await Appointment.findByIdAndUpdate(
-        appointmentID,
+        apppintmentID,
         {$push:{testRecommendation:testRecommendation._id}},
         {new:true}
     )
@@ -529,26 +555,9 @@ let applyAppointmentID=null;
 let appointmentID=null;
 app.post('/initApplyForPayment', async(req, res) => {
     const {patientID,doctorID,patientName,fee}=req.body
-    const appointment= await Appointment.create({
-        patient:patientID,
-        doctor:doctorID
-    })
-    appointmentID=appointment._id
-    const applyForAppointment=await ApplyForAppointment.create({
-        date:new Date(),
-        patientName,
-        doctorID,
-        appointmentID:appointmentID,
-        status:'Unpayed'
-    })
-    applyAppointmentID=applyForAppointment._id
-    await Doctor.findByIdAndUpdate(doctorID,{
-        $push:{applyForAppointments:applyAppointmentID}
-    },)
-
-    await Patient.findByIdAndUpdate(patientID,{
-        $push:{appointments:appointmentID}
-    })
+    if(!patientID || !doctorID || !patientName || !fee){
+       return res.status(400).json({message:'Invalid Data'})
+    }
     const data = {
         total_amount: fee,
         currency: 'BDT',
@@ -579,6 +588,41 @@ app.post('/initApplyForPayment', async(req, res) => {
         ship_postcode: 1000,
         ship_country: 'Bangladesh',
     };
+    
+    const sslcz = new SSLCommerzPayment(store_id, store_passwd, is_live)
+    sslcz.init(data).then(apiResponse => {
+        // Redirect the user to payment gateway
+        let GatewayPageURL = apiResponse.GatewayPageURL
+        res.status(200).json(GatewayPageURL)
+        // res.redirect(GatewayPageURL)
+        // console.log('Redirecting to: ', GatewayPageURL)
+    });
+    
+    const appointment= await Appointment.create({
+        patient:patientID,
+        doctor:doctorID
+    })
+    appointmentID=appointment._id
+    const applyForAppointment=await ApplyForAppointment.create({
+        date:new Date(),
+        patientName,
+        doctorID,
+        appointmentID:appointmentID,
+        status:'Unpayed'
+    })
+    applyAppointmentID=applyForAppointment._id
+    await Doctor.findByIdAndUpdate(doctorID,{
+        $push:{applyForAppointments:applyAppointmentID}
+    },)
+
+    await Patient.findByIdAndUpdate(patientID,{
+        $push:{appointments:appointmentID}
+    })
+
+
+
+
+
 
     app.post('/success',async(req,res)=>{
         await ApplyForAppointment.findByIdAndUpdate(applyAppointmentID,{
@@ -610,14 +654,6 @@ app.post('/initApplyForPayment', async(req, res) => {
     })
 
 
-    const sslcz = new SSLCommerzPayment(store_id, store_passwd, is_live)
-    sslcz.init(data).then(apiResponse => {
-        // Redirect the user to payment gateway
-        let GatewayPageURL = apiResponse.GatewayPageURL
-        res.status(200).json(GatewayPageURL)
-        // res.redirect(GatewayPageURL)
-        // console.log('Redirecting to: ', GatewayPageURL)
-    });
 })
 
 
