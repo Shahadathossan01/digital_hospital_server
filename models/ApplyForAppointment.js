@@ -4,6 +4,7 @@ const {Schema,model}=mongoose;
 
 const applyForAppointmentSchema=new Schema({
     date:Date,
+    time:String,
     patientName:String,
     doctorID:String,
     appointmentID:String,

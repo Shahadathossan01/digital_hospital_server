@@ -11,7 +11,7 @@ const store_id = 'meetu674077e4148f5'
 const store_passwd = 'meetu674077e4148f5@ssl'
 const is_live = false //true for live, false for sandbox
 const { v4: uuidv4 } = require('uuid');
-
+const mongoose=require('mongoose')
 const Patient = require('./models/Patient')
 const Doctor = require('./models/Doctor')
 const Admin = require('./models/Admin')
@@ -25,6 +25,7 @@ const ApplyForAppointment = require('./models/ApplyForAppointment')
 const upload = require('./middlewares/multer.middleware')
 const uploadOnCloudinary=require('./utils/cloudinary')
 const MedicalRecord = require('./models/MedicalRecord')
+const { sl } = require('date-fns/locale')
 app.use(cors())
 app.use(express.json())
 
@@ -35,7 +36,7 @@ app.get('/health',(req,res)=>{
 
 /**Authentication */
 app.post('/register',async(req,res,next)=>{
-    const {username,email,password}=req.body
+    const {username,email,password,category,schedule,fee}=req.body
     const updateRole=req.body.role?req.body.role:'patient'
     if(!username || !email || !password){
         throw error('Invalid Data',400)
@@ -55,7 +56,10 @@ app.post('/register',async(req,res,next)=>{
         })
         user.role==='doctor' && await Doctor.create({
             _id:user._id,
-            image:''
+            image:'',
+            category,
+            schedule,
+            fee
         })
         user.role==='admin' && await Admin.create({
             _id:user._id
@@ -214,9 +218,6 @@ app.patch('/doctor/:id',async(req,res)=>{
     const {id}=req.params
     const updateFields = Object.keys(req.body).reduce((acc, key) => {
         acc[`profile.${key}`] = req.body[key];
-        if(key=='appointmentLimit'){
-            acc[key]=req.body[key]
-        }
         if(key=='fee'){
             acc[key]=req.body[key]
         }
@@ -224,6 +225,15 @@ app.patch('/doctor/:id',async(req,res)=>{
     }, {});
     const updatedDoctor=await Doctor.findByIdAndUpdate(id,
         {$set: updateFields },
+        {new:true}
+    )
+    res.status(200).json(updatedDoctor)
+})
+app.patch('/doctorSchedule/:id',async(req,res)=>{
+    const {id}=req.params
+    const {schedule}=req.body
+    const updatedDoctor=await Doctor.findByIdAndUpdate(id,
+        {$set: {schedule:schedule}},
         {new:true}
     )
     res.status(200).json(updatedDoctor)
@@ -261,6 +271,32 @@ app.patch('/doctorImage/:id',upload.single('image'),async(req,res)=>{
         }
     })
     res.status(200).json({message:'update successfully'})
+})
+app.patch('/doctor',async(req,res)=>{
+    const {doctorID,slotID,scheduleID}=req.body
+    const result = await Doctor.updateOne(
+        { 
+          _id: doctorID, 
+          "schedule._id":scheduleID,
+          "schedule.slots._id":slotID
+        },
+        {
+          $set: {
+            "schedule.$[schedule].slots.$[slot].status": "booked",
+          }
+        },
+        {
+            arrayFilters: [{ "slot._id": slotID},{"schedule._id":scheduleID}],
+          }
+      );
+  
+      if (result.modifiedCount > 0) {
+        // console.log("Slot status updated successfully");
+        res.status(200).json({message:'Slot status updated successfully'})
+    } else {
+        // console.log("No slot found or already updated");
+        res.status(200).json({message:'No slot found or already updated'})
+      }
 })
 
 /**Admin */
@@ -554,7 +590,7 @@ app.use((err,req,res,next)=>{
 let applyAppointmentID=null;
 let appointmentID=null;
 app.post('/initApplyForPayment', async(req, res) => {
-    const {patientID,doctorID,patientName,fee}=req.body
+    const {patientID,doctorID,patientName,fee,scheduleID,slotID,timeValue,dateValue}=req.body
     if(!patientID || !doctorID || !patientName || !fee){
        return res.status(400).json({message:'Invalid Data'})
     }
@@ -602,14 +638,17 @@ app.post('/initApplyForPayment', async(req, res) => {
         patient:patientID,
         doctor:doctorID
     })
+
     appointmentID=appointment._id
     const applyForAppointment=await ApplyForAppointment.create({
-        date:new Date(),
+        date:dateValue,
+        time:timeValue,
         patientName,
         doctorID,
         appointmentID:appointmentID,
         status:'Unpayed'
     })
+
     applyAppointmentID=applyForAppointment._id
     await Doctor.findByIdAndUpdate(doctorID,{
         $push:{applyForAppointments:applyAppointmentID}
@@ -619,15 +658,25 @@ app.post('/initApplyForPayment', async(req, res) => {
         $push:{appointments:appointmentID}
     })
 
-
-
-
-
-
     app.post('/success',async(req,res)=>{
         await ApplyForAppointment.findByIdAndUpdate(applyAppointmentID,{
             $set:{status:'Payed'}
         },{new:true})
+       await Doctor.updateOne(
+            { 
+              _id: doctorID, 
+              "schedule._id":scheduleID,
+              "schedule.slots._id":slotID
+            },
+            {
+              $set: {
+                "schedule.$[schedule].slots.$[slot].status": "booked",
+              }
+            },
+            {
+                arrayFilters: [{ "slot._id": slotID},{"schedule._id":scheduleID}],
+              }
+          );
         res.redirect('http://localhost:5173/success')
     })
     app.post('/cancel',async(req,res)=>{
