@@ -272,8 +272,8 @@ app.patch('/doctorImage/:id',upload.single('image'),async(req,res)=>{
     })
     res.status(200).json({message:'update successfully'})
 })
-app.patch('/doctor',async(req,res)=>{
-    const {doctorID,slotID,scheduleID}=req.body
+app.patch('/doctorScheduleSlotStatus',async(req,res)=>{
+    const {doctorID,slotID,scheduleID,time,status}=req.body
     const result = await Doctor.updateOne(
         { 
           _id: doctorID, 
@@ -282,11 +282,38 @@ app.patch('/doctor',async(req,res)=>{
         },
         {
           $set: {
-            "schedule.$[schedule].slots.$[slot].status": "booked",
+            "schedule.$[schedule].slots.$[slot].status": status,
+            "schedule.$[schedule].slots.$[slot].time": time,
           }
         },
         {
             arrayFilters: [{ "slot._id": slotID},{"schedule._id":scheduleID}],
+          }
+      );
+  
+      if (result.modifiedCount > 0) {
+        // console.log("Slot status updated successfully");
+        res.status(200).json({message:'Slot status updated successfully'})
+    } else {
+        // console.log("No slot found or already updated");
+        res.status(200).json({message:'No slot found or already updated'})
+      }
+})
+
+app.patch('/doctorScheduleStatus',async(req,res)=>{
+    const {doctorID,scheduleID,status}=req.body
+    const result = await Doctor.updateOne(
+        { 
+          _id: doctorID, 
+          "schedule._id":scheduleID,
+        },
+        {
+          $set: {
+            "schedule.$[schedule].status":status
+          }
+        },
+        {
+            arrayFilters: [{"schedule._id":scheduleID}],
           }
       );
   
