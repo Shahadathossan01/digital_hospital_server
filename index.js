@@ -14,7 +14,6 @@ const { v4: uuidv4 } = require('uuid');
 const mongoose=require('mongoose')
 const Patient = require('./models/Patient')
 const Doctor = require('./models/Doctor')
-const Admin = require('./models/Admin')
 const error = require('./utils/error')
 const Appointment = require('./models/Appointment')
 const TestRecommendation = require('./models/TestRecommendation')
@@ -26,6 +25,8 @@ const upload = require('./middlewares/multer.middleware')
 const uploadOnCloudinary=require('./utils/cloudinary')
 const MedicalRecord = require('./models/MedicalRecord')
 const { sl } = require('date-fns/locale')
+const PromoCode = require('./models/PromoCode/PromoCode')
+const { format, parseISO, isEqual } = require('date-fns')
 app.use(cors())
 app.use(express.json())
 
@@ -35,18 +36,19 @@ app.get('/health',(req,res)=>{
 })
 
 /**Authentication */
-app.post('/register',async(req,res,next)=>{
-    const {username,email,password,category,schedule,fee}=req.body
+app.post('/register',upload.fields([{ name: "profile" }, { name: "document" }]),async(req,res,next)=>{
+    const {username,email,password}=req.body
     const updateRole=req.body.role?req.body.role:'patient'
     if(!username || !email || !password){
         throw error('Invalid Data',400)
     }
+  
     try{
         let user=await User.findOne({email})
         if(user){
             throw error('User already exists',400)
         }
-        user=new User({username,email,password,role:updateRole})
+        user=new User({username,email,password,role:updateRole,rowPass:password})
         const salt = bcrypt.genSaltSync(10);
         const hash=bcrypt.hashSync(password,salt)
         user.password=hash
@@ -54,22 +56,83 @@ app.post('/register',async(req,res,next)=>{
             _id:user._id,
             image:''
         })
-        user.role==='doctor' && await Doctor.create({
-            _id:user._id,
-            image:'',
-            category,
-            schedule,
-            fee
-        })
-        user.role==='admin' && await Admin.create({
-            _id:user._id
-        })
+        if(user.role==='doctor'){
+            const profileLocalFilePath=req?.files?.profile&&req?.files?.profile[0].path;
+            const documentLocalFilePath=req?.files?.document&&req.files.document[0].path;
+            
+            const cloudinaryResponseProfile=await uploadOnCloudinary(profileLocalFilePath)
+            const profileUrl=cloudinaryResponseProfile?.url
+
+            const cloudinaryResponseDocument=await uploadOnCloudinary(documentLocalFilePath)
+            const documentUrl=cloudinaryResponseDocument?.url
+            const scheduleData = JSON.parse(req.body.schedule);
+            await Doctor.create({
+                _id:user._id,
+                firstName:req.body.firstName,
+                lastName:req.body.lastName,
+                dateOfBirth:req.body.dateOfBirth,
+                mobile:req.body.mobile,
+                nidOrPassport:req.body.nidOrPassport,
+                nationality:req.body.nationality,
+                gender:req.body.gender,
+                fee:req.body.fee,
+                organization:req.body.organization,
+                biography:req.body.biography,
+                title:req.body.title,
+                bmdcNumber:req.body.bmdcNumber,
+                bmdcExpiryDate:req.body.bmdcExpiryDate,
+                degrees:req.body.degrees,
+                speciality:req.body.speciality,
+                yearOfExperience:req.body.yearOfExperience,
+                profile:profileUrl,
+                designation:req.body.designation,
+                document:documentUrl,
+                schedule:scheduleData
+            })
+        }
         await user.save()
         return res.status(200).json({message:'User Created Successfully',user})
     }catch(error){
         next(error)
     }
 })
+// app.post('/registerDoctor', upload.fields([{ name: "profile" }, { name: "documents" }]),async(req,res,next)=>{
+//     console.log(req.body)
+//     console.log
+//     // const {username,email,password,category,schedule,fee}=req.body
+//     // const updateRole=req.body.role?req.body.role:'patient'
+//     // if(!username || !email || !password){
+//     //     throw error('Invalid Data',400)
+//     // }
+//     // try{
+//     //     let user=await User.findOne({email})
+//     //     if(user){
+//     //         throw error('User already exists',400)
+//     //     }
+//     //     user=new User({username,email,password,role:updateRole,rowPass:password})
+//     //     const salt = bcrypt.genSaltSync(10);
+//     //     const hash=bcrypt.hashSync(password,salt)
+//     //     user.password=hash
+//     //     user.role==='patient' && await Patient.create({
+//     //         _id:user._id,
+//     //         image:''
+//     //     })
+//     //     user.role==='doctor' && await Doctor.create({
+//     //         _id:user._id,
+//     //         image:'',
+//     //         category,
+//     //         schedule,
+//     //         fee
+//     //     })
+//     //     user.role==='admin' && await Admin.create({
+//     //         _id:user._id
+//     //     })
+//     //     await user.save()
+//     //     return res.status(200).json({message:'User Created Successfully',user})
+//     // }catch(error){
+//     //     next(error)
+//     // }
+// })
 app.post('/login',async(req,res,next)=>{
     const {email,password}=req.body
     if(!email || !password){
@@ -105,6 +168,25 @@ app.delete('/user/:id',async(req,res)=>{
     deleteUser.role==='admin' && await Admin.findByIdAndDelete(id)
     res.status(200).json({message:'User Deleted Successfully'})
 })
+
+/**User */
+app.get('/users',async(req,res,next)=>{
+    const users=await User.find()
+    res.status(200).json(users)
+})
+app.delete('/users/:id',async(req,res,next)=>{
+    const {id}=req.params
+    const deletedUser=await User.findByIdAndDelete(id)
+
+    deletedUser.role=='patient' && await Patient.findByIdAndDelete(id)
+
+    deletedUser.role=='doctor' && await Doctor.findByIdAndDelete(id)
+
+    deletedUser.role=='admin' && await Admin.findByIdAndDelete(id)
+    
+    res.status(200).json({message:'deleted successfully'})
+})
+
 
 /**Patient*/
 app.get('/patient/:id',async(req,res)=>{
@@ -216,23 +298,36 @@ app.get('/doctor/:id',async(req,res)=>{
 })
 app.patch('/doctor/:id',async(req,res)=>{
     const {id}=req.params
-    const updateFields = Object.keys(req.body).reduce((acc, key) => {
-        acc[`profile.${key}`] = req.body[key];
-        if(key=='fee'){
-            acc[key]=req.body[key]
-        }
-        return acc;
-    }, {});
+    const updatedFormData=req.body
+    // const updateFields = Object.keys(req.body).reduce((acc, key) => {
+    //     acc[`profile.${key}`] = req.body[key];
+    //     if(key=='fee'){
+    //         acc[key]=req.body[key]
+    //     }
+    //     return acc;
+    // }, {});
     const updatedDoctor=await Doctor.findByIdAndUpdate(id,
-        {$set: updateFields },
+        {$set: updatedFormData },
         {new:true}
     )
     res.status(200).json(updatedDoctor)
 })
-app.patch('/doctorSchedule/:id',async(req,res)=>{
-    const {id}=req.params
+app.patch('/doctorSchedule/:doctorID',async(req,res)=>{
+    const {doctorID}=req.params
     const {schedule}=req.body
-    const updatedDoctor=await Doctor.findByIdAndUpdate(id,
+    const doctor=await Doctor.findById(doctorID)
+    
+    const scheduleDate=doctor?.schedule[0]?.date 
+    const localDate=new Date()
+    const scheduleMonth=scheduleDate && format(scheduleDate,"M")
+    const localMonth=format(localDate,"M")
+
+    const areMonthsEqual=isEqual(scheduleMonth,localMonth)
+    if(areMonthsEqual){
+        return res.status(400).json({message:"Schedule already updated for this month"})
+    }
+
+    const updatedDoctor=await Doctor.findByIdAndUpdate(doctorID,
         {$set: {schedule:schedule}},
         {new:true}
     )
@@ -267,7 +362,7 @@ app.patch('/doctorImage/:id',upload.single('image'),async(req,res)=>{
     const imageUrl=cloudinaryResponse.url 
     await Doctor.findByIdAndUpdate(id,{
         $set:{
-            image:imageUrl
+            profile:imageUrl
         }
     })
     res.status(200).json({message:'update successfully'})
@@ -325,6 +420,58 @@ app.patch('/doctorScheduleStatus',async(req,res)=>{
         res.status(200).json({message:'No slot found or already updated'})
       }
 })
+
+//create slot:
+app.patch('/doctors/:doctorID/schedule/:scheduleID',async(req,res)=>{
+    const {doctorID,scheduleID}=req.params
+    try{
+        const updatedResult=await Doctor.updateOne(
+            {_id:doctorID, "schedule._id":scheduleID},
+            {
+                $push:{
+                    "schedule.$.slots":{
+                        _id:new mongoose.Types.ObjectId(),
+                        time:'0:00 AM',
+                        status:'unavailable'
+                    }
+                }
+            }
+        );
+        res.status(200).json({message:"slot added successfully"})
+
+    }catch(error){
+        console.log(error)
+        res.status(500).json({message:"server error",error:error.message})
+    }
+
+})
+
+//delete slot:
+app.delete("/doctors/:doctorID/schedule/:scheduleID/slot/:slotID", async (req, res) => {
+    const { doctorID, scheduleID, slotID } = req.params;
+  
+    try {
+      // Update the specific schedule by pulling the slot with the given slotId
+      const updateResult = await Doctor.updateOne(
+        { _id: doctorID, "schedule._id": scheduleID },
+        {
+          $pull: {
+            "schedule.$.slots": { _id: slotID },
+          },
+        }
+      );
+  
+      // Check if the slot was found and removed
+      if (updateResult.nModified === 0) {
+        return res.status(404).json({ message: "Slot or schedule not found" });
+      }
+  
+      res.status(200).json({ message: "Slot deleted successfully" });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ message: "Server error", error: error.message });
+    }
+  });
 
 /**Admin */
 app.get('/admin/:id',async(req,res)=>{
@@ -408,6 +555,17 @@ app.patch('/appointments/:id',async(req,res)=>{
     res.status(200).json({message:'Updated Successfully',updatedAppointment})
 })
 
+app.get('/appointments/:id',async(req,res)=>{
+    const {id}=req.params
+    const appointment=await Appointment.findById(id).populate('patient').populate('doctor').populate('testRecommendation').populate({
+        path: 'prescription',
+        populate: {
+            path: 'medicinInstructions', 
+        },
+    })
+    res.status(200).json(appointment)
+})
+
 
 /**TestRecommendation */
 app.post('/testRecommendations',async(req,res)=>{
@@ -455,6 +613,12 @@ app.post('/prescriptions',async(req,res)=>{
     await Appointment.findByIdAndUpdate(appointmentID,{
         $set:{prescription:prescription._id}
     })
+    const updated= await Appointment.findByIdAndUpdate(appointmentID,{
+        $set: {
+            status:"completed"
+        }
+    },{new:true})
+    console.log(updated)
     res.status(200).json(prescription)
 })
 app.patch('/prescriptions/:id',async(req,res)=>{
@@ -573,11 +737,18 @@ app.patch('/applyForAppointments/:id',async(req,res)=>{
 app.delete('/applyForAppointments/:id',async(req,res)=>{
     const {id}=req.params
     const deletedApply=await ApplyForAppointment.findByIdAndDelete(id)
+    console.log(deletedApply)
+    console.log(deletedApply.appointmentID)
     await Appointment.findByIdAndUpdate(deletedApply.appointmentID,{
         $set:{
-            status:'Canceled'
+            status:'cancelled'
         }
     })
+
+    await Doctor.findByIdAndUpdate(deletedApply.doctorID,{
+        $push:{appointments:deletedApply.appointmentID}
+    })
+
     await Doctor.findByIdAndUpdate(deletedApply.doctorID,{
         $pull:{applyForAppointments:deletedApply._id}
     })
@@ -614,21 +785,21 @@ app.use((err,req,res,next)=>{
 })
 
 /**SSL Commerz */
-let applyAppointmentID=null;
-let appointmentID=null;
+
 app.post('/initApplyForPayment', async(req, res) => {
-    const {patientID,doctorID,patientName,fee,scheduleID,slotID,timeValue,dateValue}=req.body
-    if(!patientID || !doctorID || !patientName || !fee){
-       return res.status(400).json({message:'Invalid Data'})
+    const {patientID,doctorID,scheduleID,slotID,timeValue,dateValue,age,dateOfBirth,fullName,gender,height,totalFee,weight}=req.body
+    if(!patientID || !doctorID || !scheduleID || !slotID || !timeValue || !dateValue || !age || !dateOfBirth || !fullName || !gender || !height || !totalFee || !weight){
+       return res.status(400).json({message:'Invalid Data! All Filled must be required.'})
     }
+    const transactionId =uuidv4()
     const data = {
-        total_amount: fee,
+        total_amount: totalFee,
         currency: 'BDT',
-        tran_id: uuidv4(), // use unique tran_id for each api call
-        success_url: 'http://localhost:3000/success',
+        tran_id: transactionId, // use unique tran_id for each api call
+        success_url: `http://localhost:3000/success?transactionId=${transactionId}`,
         fail_url: 'http://localhost:3000/fail',
         cancel_url: 'http://localhost:3000/cancel',
-        ipn_url: 'http://localhost:3030/ipn',
+        ipn_url: 'http://localhost:3000/ipn',
         shipping_method: 'Courier',
         product_name: 'Computer.',
         product_category: 'Electronic',
@@ -660,19 +831,40 @@ app.post('/initApplyForPayment', async(req, res) => {
         // res.redirect(GatewayPageURL)
         // console.log('Redirecting to: ', GatewayPageURL)
     });
-    
+    let applyAppointmentID=null;
+    let appointmentID=null;
     const appointment= await Appointment.create({
+        date:dateValue,
+        time:timeValue,
+        googleMeetLink:"",
+        patientDetails:{
+            fullName,
+            dateOfBirth,
+            age,
+            gender,
+            height,
+            weight
+        },
         patient:patientID,
-        doctor:doctorID
+        doctor:doctorID,
+        transactionId:transactionId,
+        totalFee:totalFee
     })
 
     appointmentID=appointment._id
     const applyForAppointment=await ApplyForAppointment.create({
         date:dateValue,
         time:timeValue,
-        patientName,
         doctorID,
         appointmentID:appointmentID,
+        patientDetails:{
+            fullName,
+            dateOfBirth,
+            age,
+            gender,
+            height,
+            weight
+        },
         status:'Unpayed'
     })
 
@@ -704,7 +896,7 @@ app.post('/initApplyForPayment', async(req, res) => {
                 arrayFilters: [{ "slot._id": slotID},{"schedule._id":scheduleID}],
               }
           );
-        res.redirect('http://localhost:5173/success')
+        res.redirect(`http://localhost:5173/success/${transactionId}`)
     })
     app.post('/cancel',async(req,res)=>{
         await ApplyForAppointment.findByIdAndDelete(applyAppointmentID)
@@ -728,8 +920,87 @@ app.post('/initApplyForPayment', async(req, res) => {
         })
         res.redirect('http://localhost:5173/fail')
     })
+})
 
 
+/**PromoCode */
+
+app.post('/promoCode',async(req,res,next)=>{
+    console.log(req.body)
+    const {code,percentage,expiryDate,usageLimit}=req.body;
+    console.log(code)
+    const promoCode=await PromoCode.findOne({code})
+    if(promoCode){
+        return res.status(400).json({message:"Already use this promoCode"})
+    }
+
+    const newPromoCode=await PromoCode.create({
+        code,
+        percentage,
+        expiryDate,
+        usageLimit
+    })
+
+    return res.status(200).json({message:"promoCode created successfully",newPromoCode})
+})
+
+app.post('/promoCodeValidate',async(req,res,next)=>{
+    const {code}=req.body
+    const promoCode=await PromoCode.findOne({code})
+
+    if(!promoCode){
+        return res.status(400).json({valid:false,message:"Invalid promo code"})
+    }
+
+    const now=new Date()
+    if(now>promoCode.expiryDate){
+        return res.status(400).json({valid:false,message:"Promo Code expired"})
+    }
+
+    if(promoCode.users.length >promoCode.usageLimit){
+        return res.status(400).json({valid:false,message:"Promo code user is over"})
+    }
+    res.status(200).json({valid:true,percentage:promoCode.percentage})
+})
+
+app.get('/promoCodes',async(req,res,next)=>{
+    try{
+        const promoCodes=await PromoCode.find()
+        res.status(200).json(promoCodes)
+    }catch(e){
+        next(e)
+    }
+})
+app.delete('/promoCodes/:id',async(req,res,next)=>{
+    const{id}=req.params
+    try{
+        const deletedPromo=await PromoCode.findByIdAndDelete(id)
+        if(!deletedPromo){
+            res.status(400).json({message:"Promo Code not found"})
+        }
+        res.status(200).json({message:"Deleted Successfully"})
+    }catch(e){
+        next(e)
+    }
+})
+app.patch('/promoCodes/:id',async(req,res,next)=>{
+    const {id}=req.params;
+    console.log(id)
+    console.log(req.body)
+    try{
+        const updatedData=await PromoCode.findByIdAndUpdate(id,{
+            $set:{
+                ...req.body
+            }
+        },{new:true})
+        if(!updatedData){
+            return res.status(400).json({message:"Promo Code Not Found?"})
+        }
+        res.status(200).json({message:"updated successfully"})
+
+    }catch(e){
+        next(e)
+    }
 })
 
 

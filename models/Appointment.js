@@ -5,9 +5,17 @@ const appointmentSchema=new Schema({
     date:Date,
     time:String,
     googleMeetLink:String,
+    patientDetails:{
+        fullName:String,
+        dateOfBirth:Date,
+        age:Number,
+        gender:String,
+        height:Number,
+        weight:Number
+    },
     status:{
         type:String,
-        default:'Panding'
+        default:'panding'
     },
     patient:{
         type:Schema.Types.ObjectId,
@@ -26,8 +34,10 @@ const appointmentSchema=new Schema({
     prescription:{
         type:Schema.Types.ObjectId,
         ref:'Prescription'
-    }
-})
+    },
+    transactionId:String,
+    totalFee:Number
+},{ timestamps: true })
 const Appointment=model('Appointment',appointmentSchema)
 
 module.exports=Appointment

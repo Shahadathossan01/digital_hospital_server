@@ -15,18 +15,30 @@ const slotSchema = new Schema({
 
 const doctorSchema=new Schema({
     _id:String,
-    profile:{
-        firstName:String,
-        lastName:String,
-        phone:Number,
-        address:String,
-        offlineChamber:String,
-        designation:String,
-        email:String
-    },
+    firstName:String,
+    lastName:String,
+    dateOfBirth:String,
+    mobile:Number,
+    nidOrPassport:Number,
+    nationality:String,
+    gender:String,
     fee:Number,
-    image:String,
-    category:String,
+    organization:String,
+    biography:String,
+    address:String,
+    title:String,
+    bmdcNumber:String,
+    bmdcExpiryDate:String,
+    degrees:String,
+    speciality:String,
+    yearOfExperience:Number,
+    document:String,
+    profile:String,
+    designation:String,
+    isValid:{
+        type:Boolean,
+        default:false
+    },
     applyForAppointments:[
         {
             type:Schema.Types.ObjectId,
@@ -40,7 +52,7 @@ const doctorSchema=new Schema({
         }
     ],
     schedule: [dayScheduleSchema],
-})
+},{ timestamps: true })
 
 const Doctor=model('Doctor',doctorSchema)
 
