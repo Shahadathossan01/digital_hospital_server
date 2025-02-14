@@ -1,7 +1,6 @@
 const express=require('express')
 const app=express()
 require('dotenv').config()
-const port=process.env.PORT || 5000
 const cors=require('cors')
 const connectDB = require('./db')
 const User = require('./models/User')
@@ -27,6 +26,7 @@ const { format, isEqual } = require('date-fns')
 app.use(cors())
 app.use(express.json())
 
+const port=process.env.PORT || 3000
 const storeId = process.env.STORE_ID;
 const storePassword = process.env.STORE_PASSWORD;
 const jwtSecret=process.env.JWT_SECRET
@@ -831,6 +831,79 @@ app.post('/initApplyForPayment', async(req, res) => {
         })
         res.redirect('http://localhost:5173/fail')
     })
+})
+
+app.post('/freeAppointments',async(req,res,next)=>{
+    const {patientID,doctorID,scheduleID,slotID,timeValue,dateValue,age,dateOfBirth,fullName,gender,height,totalFee,weight}=req.body
+    console.log(req.body)
+    if(!patientID || !doctorID || !scheduleID || !slotID || !timeValue || !dateValue || !age || !dateOfBirth || !fullName || !gender || !height || !weight){
+       return res.status(400).json({message:'Invalid Data! All Filled must be required.'})
+    }
+    try{
+        let applyAppointmentID=null;
+        let appointmentID=null;
+    const appointment= await Appointment.create({
+        date:dateValue,
+        time:timeValue,
+        googleMeetLink:"",
+        patientDetails:{
+            fullName,
+            dateOfBirth,
+            age,
+            gender,
+            height,
+            weight
+        },
+        patient:patientID,
+        doctor:doctorID,
+        totalFee:totalFee
+    })
+
+    appointmentID=appointment._id
+    const applyForAppointment=await ApplyForAppointment.create({
+        date:dateValue,
+        time:timeValue,
+        doctorID,
+        appointmentID:appointmentID,
+        patientDetails:{
+            fullName,
+            dateOfBirth,
+            age,
+            gender,
+            height,
+            weight
+        },
+        status:'Free'
+    })
+
+    applyAppointmentID=applyForAppointment._id
+    await Doctor.findByIdAndUpdate(doctorID,{
+        $push:{applyForAppointments:applyAppointmentID}
+    },)
+
+    await Patient.findByIdAndUpdate(patientID,{
+        $push:{appointments:appointmentID}
+    })
+    await Doctor.updateOne(
+        { 
+          _id: doctorID, 
+          "schedule._id":scheduleID,
+          "schedule.slots._id":slotID
+        },
+        {
+          $set: {
+            "schedule.$[schedule].slots.$[slot].status": "booked",
+          }
+        },
+        {
+            arrayFilters: [{ "slot._id": slotID},{"schedule._id":scheduleID}],
+          }
+      );
+    res.status(200).json({message:"successfully applied for free appointment",freeAppointmentId:appointmentID})
+
+    }catch(e){
+        next(e)
+    }
 })
 
 
