@@ -38,7 +38,7 @@ app.get('/health',(req,res)=>{
 })
 
 /**Authentication */
-app.post('/register',upload.fields([{ name: "profile" }, { name: "document" }]),async(req,res,next)=>{
+app.post('/api/register',upload.fields([{ name: "profile" }, { name: "document" }]),async(req,res,next)=>{
     const {username,email,password}=req.body
     const updateRole=req.body.role?req.body.role:'patient'
     if(!username || !email || !password){
@@ -98,7 +98,7 @@ app.post('/register',upload.fields([{ name: "profile" }, { name: "document" }]),
         next(error)
     }
 })
-app.post('/login',async(req,res,next)=>{
+app.post('/api/login',async(req,res,next)=>{
     const {email,password}=req.body
     if(!email || !password){
         throw error('Invalid Data',400)
@@ -125,7 +125,13 @@ app.post('/login',async(req,res,next)=>{
         next(error)
     }
 })
-app.delete('/user/:id',async(req,res)=>{
+
+/**User */
+app.get('/api/users',async(req,res,next)=>{
+    const users=await User.find()
+    res.status(200).json(users)
+})
+app.delete('/api/users/:id',async(req,res)=>{
     const {id}=req.params
     const deleteUser=await User.findByIdAndDelete(id)
     deleteUser.role==='patient' && await Patient.findByIdAndDelete(id)
@@ -134,27 +140,9 @@ app.delete('/user/:id',async(req,res)=>{
     res.status(200).json({message:'User Deleted Successfully'})
 })
 
-/**User */
-app.get('/users',async(req,res,next)=>{
-    const users=await User.find()
-    res.status(200).json(users)
-})
-app.delete('/users/:id',async(req,res,next)=>{
-    const {id}=req.params
-    const deletedUser=await User.findByIdAndDelete(id)
-
-    deletedUser.role=='patient' && await Patient.findByIdAndDelete(id)
-
-    deletedUser.role=='doctor' && await Doctor.findByIdAndDelete(id)
-
-    deletedUser.role=='admin' && await Admin.findByIdAndDelete(id)
-    
-    res.status(200).json({message:'deleted successfully'})
-})
-
 
 /**Patient*/
-app.get('/patient/:id',async(req,res)=>{
+app.get('/api/patient/:id',async(req,res)=>{
     const {id}=req.params
     const user=await Patient.findById(id).populate({
         path: 'appointments',
@@ -169,7 +157,7 @@ app.get('/patient/:id',async(req,res)=>{
     })
     res.status(200).json(user)
 })
-app.patch('/patient/:id',async(req,res,error)=>{
+app.patch('/api/patient/:id',async(req,res,error)=>{
     const {id}=req.params
     try{
         const updateFields = Object.keys(req.body).reduce((acc, key) => {
@@ -186,12 +174,12 @@ app.patch('/patient/:id',async(req,res,error)=>{
     }
     
 })
-app.delete('/patients/:id',async(req,res)=>{
+app.delete('/api/patients/:id',async(req,res)=>{
     const {id}=req.params
     const deletedPatient=await Patient.findByIdAndDelete(id)
     res.status(200).json({message:'Deleted Successfully'})
 })
-app.patch('/patientAppointment/:id',async(req,res)=>{
+app.patch('/api/patientAppointment/:id',async(req,res)=>{
     //Body:(appointmentID,doctorID)
     const {id}=req.params
     const {appointmentID,doctorID}=req.body
@@ -216,7 +204,7 @@ app.patch('/patientAppointment/:id',async(req,res)=>{
 
     res.status(200).json({message:'Updated Successfully'})
 })
-app.patch('/patientImage/:id',upload.single('image'),async(req,res)=>{
+app.patch('/api/patientImage/:id',upload.single('image'),async(req,res)=>{
     const {id}=req.params
     const localFilePath=req.file?.path
     const cloudinaryResponse=await uploadOnCloudinary(localFilePath)
@@ -230,7 +218,7 @@ app.patch('/patientImage/:id',upload.single('image'),async(req,res)=>{
 })
 
 /**Doctor */
-app.get('/doctors',async(req,res,next)=>{
+app.get('/api/doctors',async(req,res,next)=>{
     try{
         const doctors=await Doctor.find().populate('applyForAppointments').populate({
             path:'appointments',
@@ -246,7 +234,7 @@ app.get('/doctors',async(req,res,next)=>{
         next(error)
     }
 })
-app.get('/doctor/:id',async(req,res)=>{
+app.get('/api/doctors/:id',async(req,res)=>{
     const {id}=req.params
     const doctor=await Doctor.findById(id).populate('applyForAppointments').populate({
         path: 'appointments',
@@ -261,7 +249,7 @@ app.get('/doctor/:id',async(req,res)=>{
     })
     res.status(200).json(doctor)
 })
-app.patch('/doctor/:id',async(req,res)=>{
+app.patch('/api/doctors/:id',async(req,res)=>{
     const {id}=req.params
     const updatedFormData=req.body
     // const updateFields = Object.keys(req.body).reduce((acc, key) => {
@@ -277,7 +265,7 @@ app.patch('/doctor/:id',async(req,res)=>{
     )
     res.status(200).json(updatedDoctor)
 })
-app.patch('/doctorSchedule/:doctorID',async(req,res)=>{
+app.patch('/api/doctorSchedule/:doctorID',async(req,res)=>{
     const {doctorID}=req.params
     const {schedule}=req.body
     const doctor=await Doctor.findById(doctorID)
@@ -298,12 +286,12 @@ app.patch('/doctorSchedule/:doctorID',async(req,res)=>{
     )
     res.status(200).json(updatedDoctor)
 })
-app.delete('/doctors/:id',async(req,res)=>{
+app.delete('/api/doctors/:id',async(req,res)=>{
     const {id}=req.params
     const deletedDoctor=await Doctor.findByIdAndDelete(id)
     res.status(200).json({message:'Deleted Successfully'})
 })
-app.patch('/doctorAppointment/:id',async(req,res)=>{
+app.patch('/api/doctorAppointment/:id',async(req,res)=>{
     const {id}=req.params
     const {appointmentID,patientID}=req.body
     const updatedDoctorAppointment=await Doctor.findByIdAndUpdate(id,{
@@ -320,7 +308,7 @@ app.patch('/doctorAppointment/:id',async(req,res)=>{
     // }
     res.status(200).json({message:'Updated Successfully'})
 })
-app.patch('/doctorImage/:id',upload.single('image'),async(req,res)=>{
+app.patch('/api/doctorImage/:id',upload.single('image'),async(req,res)=>{
     const {id}=req.params
     const localFilePath=req.file?.path
     const cloudinaryResponse=await uploadOnCloudinary(localFilePath)
@@ -332,7 +320,7 @@ app.patch('/doctorImage/:id',upload.single('image'),async(req,res)=>{
     })
     res.status(200).json({message:'update successfully'})
 })
-app.patch('/doctorScheduleSlotStatus',async(req,res)=>{
+app.patch('/api/doctorScheduleSlotStatus',async(req,res)=>{
     const {doctorID,slotID,scheduleID,time,status}=req.body
     const result = await Doctor.updateOne(
         { 
@@ -360,7 +348,7 @@ app.patch('/doctorScheduleSlotStatus',async(req,res)=>{
       }
 })
 
-app.patch('/doctorScheduleStatus',async(req,res)=>{
+app.patch('/api/doctorScheduleStatus',async(req,res)=>{
     const {doctorID,scheduleID,status}=req.body
     const result = await Doctor.updateOne(
         { 
@@ -387,7 +375,7 @@ app.patch('/doctorScheduleStatus',async(req,res)=>{
 })
 
 //create slot:
-app.patch('/doctors/:doctorID/schedule/:scheduleID',async(req,res)=>{
+app.patch('/api/doctors/:doctorID/schedule/:scheduleID',async(req,res)=>{
     const {doctorID,scheduleID}=req.params
     try{
         const updatedResult=await Doctor.updateOne(
@@ -412,7 +400,7 @@ app.patch('/doctors/:doctorID/schedule/:scheduleID',async(req,res)=>{
 })
 
 //delete slot:
-app.delete("/doctors/:doctorID/schedule/:scheduleID/slot/:slotID", async (req, res) => {
+app.delete("/api/doctors/:doctorID/schedule/:scheduleID/slot/:slotID", async (req, res) => {
     const { doctorID, scheduleID, slotID } = req.params;
   
     try {
@@ -439,7 +427,7 @@ app.delete("/doctors/:doctorID/schedule/:scheduleID/slot/:slotID", async (req, r
   });
 
 /**Appointment */
-app.post('/appointment',async(req,res)=>{
+app.post('/api/appointment',async(req,res)=>{
     console.log(req.body)
     const {date, time, googleMeetLink, patientID, doctorID}=req.body
     try{
@@ -458,7 +446,7 @@ app.post('/appointment',async(req,res)=>{
         next(error)
     }
 })
-app.get('/appointments',async(req,res)=>{
+app.get('/api/appointments',async(req,res)=>{
     const appointment=await Appointment.find().populate('patient').populate('doctor').populate('testRecommendation').populate({
         path: 'prescription',
         populate: {
@@ -467,7 +455,7 @@ app.get('/appointments',async(req,res)=>{
     })
     res.status(200).json(appointment)
 })
-app.delete('/appointments/:id',async(req,res)=>{
+app.delete('/api/appointments/:id',async(req,res)=>{
     const {id}=req.params
     const deletedAppointment=await Appointment.findByIdAndDelete(id)
     res.status(200).json({message:"Deleted Successfully!"})
@@ -477,7 +465,7 @@ app.delete('/appointments/:id',async(req,res)=>{
         })
     }
 })
-app.patch('/appointments/:id',async(req,res)=>{
+app.patch('/api/appointments/:id',async(req,res)=>{
     const {id}=req.params
     const {date,time,googleMeetLink,reqApplyedID,status}=req.body
     const updatedAppointment=await Appointment.findByIdAndUpdate(id,{
@@ -498,7 +486,7 @@ app.patch('/appointments/:id',async(req,res)=>{
     res.status(200).json({message:'Updated Successfully',updatedAppointment})
 })
 
-app.get('/appointments/:id',async(req,res)=>{
+app.get('/api/appointments/:id',async(req,res)=>{
     const {id}=req.params
     const appointment=await Appointment.findById(id).populate('patient').populate('doctor').populate('testRecommendation').populate({
         path: 'prescription',
@@ -511,7 +499,7 @@ app.get('/appointments/:id',async(req,res)=>{
 
 
 /**TestRecommendation */
-app.post('/testRecommendations',async(req,res)=>{
+app.post('/api/testRecommendations',async(req,res)=>{
     const {testName,image,apppintmentID}=req.body
     const testRecommendation=await TestRecommendation.create({
         testName,
@@ -525,7 +513,7 @@ app.post('/testRecommendations',async(req,res)=>{
     res.status(200).json(testRecommendation)
 })
 
-app.patch('/testRecommendations/:id',upload.single('image'),async(req,res)=>{
+app.patch('/api/testRecommendations/:id',upload.single('image'),async(req,res)=>{
     const {id}=req.params
     const localFilePath=req.file.path //uploads\1734292049754-download.jpeg
     const cloudinaryResponse=await uploadOnCloudinary(localFilePath)
@@ -537,14 +525,14 @@ app.patch('/testRecommendations/:id',upload.single('image'),async(req,res)=>{
     res.status(200).json({message:'Updated Successfully',updatedTest})
 })
 
-app.delete('/testRecommendations/:id',async(req,res)=>{
+app.delete('/api/testRecommendations/:id',async(req,res)=>{
     const {id}=req.params
     const deletedTest=await TestRecommendation.findByIdAndDelete(id)
     res.status(200).json({message:'Deleted Successfully'})
 })
 
 /**Prescription */
-app.post('/prescriptions',async(req,res)=>{
+app.post('/api/prescriptions',async(req,res)=>{
     const {date,diagnosis,instruction,appointmentID}=req.body
     const prescription=await Prescription.create({
         date:date || new Date(),
@@ -564,7 +552,7 @@ app.post('/prescriptions',async(req,res)=>{
     console.log(updated)
     res.status(200).json(prescription)
 })
-app.patch('/prescriptions/:id',async(req,res)=>{
+app.patch('/api/prescriptions/:id',async(req,res)=>{
     const {id}=req.params
     const {date,diagnosis,instruction}=req.body
     const updatedPrescription=await Prescription.findByIdAndUpdate(id,{
@@ -576,14 +564,14 @@ app.patch('/prescriptions/:id',async(req,res)=>{
     },{new:true})
     res.status(200).json({message:'Updated Successfully'})
 })
-app.delete('/prescriptions/:id',async(req,res)=>{
+app.delete('/api/prescriptions/:id',async(req,res)=>{
     const {id}=req.params
     const deletedPrescription=await Prescription.findByIdAndDelete(id)
     res.status(200).json({message:'Deleted Successfully'})
 })
 
 /**MedicinInstructions */
-app.post('/medicinInstructions',async(req,res)=>{
+app.post('/api/medicinInstructions',async(req,res)=>{
     const {medicinName,dosage,frequency,duration,prescriptionID}=req.body
     const medicinInstruction=await MedicinInstruction.create({
         medicinName,
@@ -597,7 +585,7 @@ app.post('/medicinInstructions',async(req,res)=>{
 
     res.status(200).json(medicinInstruction)
 })
-app.patch('/medicinInstructions/:id',async(req,res)=>{
+app.patch('/api/medicinInstructions/:id',async(req,res)=>{
     const {id}=req.params
     const {medicinName,dosage,frequency,duration}=req.body
     const updatedMedicin=await MedicinInstruction.findByIdAndUpdate(id,{
@@ -610,14 +598,14 @@ app.patch('/medicinInstructions/:id',async(req,res)=>{
     },{new:true})
     res.status(200).json({message:'Updated Successfully',updatedMedicin})
 })
-app.delete('/medicinInstructions/:id',async(req,res)=>{
+app.delete('/api/medicinInstructions/:id',async(req,res)=>{
     const {id}=req.params
     const deletedMedicin=await MedicinInstruction.findByIdAndDelete(id)
     res.status(200).json({message:'Deleted Successfully'})
 })
 
 /**Apply for Appointment */
-app.post('/applyForAppointments',async(req,res)=>{
+app.post('/api/applyForAppointments',async(req,res)=>{
     const {date,patientName,doctorID,status,patientID}=req.body
     const appointment= await Appointment.create({
         patient:patientID,
@@ -640,7 +628,7 @@ app.post('/applyForAppointments',async(req,res)=>{
     })
     res.status(200).json(applyForAppointment)
 })
-app.patch('/applyForAppointments/:id',async(req,res)=>{
+app.patch('/api/applyForAppointments/:id',async(req,res)=>{
     const {id}=req.params
     const {status}=req.body
     const updatedApply=await ApplyForAppointment.findByIdAndUpdate(id,{
@@ -648,7 +636,7 @@ app.patch('/applyForAppointments/:id',async(req,res)=>{
     },{new:true})
     res.status(200).json({message:'Updated Successfully'})
 })
-app.delete('/applyForAppointments/:id',async(req,res)=>{
+app.delete('/api/applyForAppointments/:id',async(req,res)=>{
     const {id}=req.params
     const deletedApply=await ApplyForAppointment.findByIdAndDelete(id)
     console.log(deletedApply)
@@ -670,14 +658,14 @@ app.delete('/applyForAppointments/:id',async(req,res)=>{
 })
 
 /**Medical Record */
-app.post('/medicalRecord',async(req,res)=>{
+app.post('/api/medicalRecord',async(req,res)=>{
     const {appointmentID}=req.body
     const medicalRecord=await MedicalRecord.create({
         medicalRecord:appointmentID
     })
     res.status(200).json(medicalRecord)
 })
-app.get('/medicalRecord',async(req,res)=>{
+app.get('/api/medicalRecord',async(req,res)=>{
     const medicalRecord=await MedicalRecord.find().populate({
         path:'medicalRecord',
         populate:[
@@ -700,7 +688,7 @@ app.use((err,req,res,next)=>{
 
 /**SSL Commerz */
 
-app.post('/initApplyForPayment', async(req, res) => {
+app.post('/api/initApplyForPayment', async(req, res) => {
     const {patientID,doctorID,scheduleID,slotID,timeValue,dateValue,age,dateOfBirth,fullName,gender,height,totalFee,weight}=req.body
     if(!patientID || !doctorID || !scheduleID || !slotID || !timeValue || !dateValue || !age || !dateOfBirth || !fullName || !gender || !height || !totalFee || !weight){
        return res.status(400).json({message:'Invalid Data! All Filled must be required.'})
@@ -833,7 +821,7 @@ app.post('/initApplyForPayment', async(req, res) => {
     })
 })
 
-app.post('/freeAppointments',async(req,res,next)=>{
+app.post('/api/freeAppointments',async(req,res,next)=>{
     const {patientID,doctorID,scheduleID,slotID,timeValue,dateValue,age,dateOfBirth,fullName,gender,height,totalFee,weight}=req.body
     console.log(req.body)
     if(!patientID || !doctorID || !scheduleID || !slotID || !timeValue || !dateValue || !age || !dateOfBirth || !fullName || !gender || !height || !weight){
@@ -909,7 +897,7 @@ app.post('/freeAppointments',async(req,res,next)=>{
 
 /**PromoCode */
 
-app.post('/promoCode',async(req,res,next)=>{
+app.post('/api/promoCode',async(req,res,next)=>{
     console.log(req.body)
     const {code,percentage,expiryDate,usageLimit}=req.body;
     console.log(code)
@@ -928,7 +916,7 @@ app.post('/promoCode',async(req,res,next)=>{
     return res.status(200).json({message:"promoCode created successfully",newPromoCode})
 })
 
-app.post('/promoCodeValidate',async(req,res,next)=>{
+app.post('/api/promoCodeValidate',async(req,res,next)=>{
     const {code}=req.body
     const promoCode=await PromoCode.findOne({code})
 
@@ -947,7 +935,7 @@ app.post('/promoCodeValidate',async(req,res,next)=>{
     res.status(200).json({valid:true,percentage:promoCode.percentage})
 })
 
-app.get('/promoCodes',async(req,res,next)=>{
+app.get('/api/promoCodes',async(req,res,next)=>{
     try{
         const promoCodes=await PromoCode.find()
         res.status(200).json(promoCodes)
@@ -955,7 +943,7 @@ app.get('/promoCodes',async(req,res,next)=>{
         next(e)
     }
 })
-app.delete('/promoCodes/:id',async(req,res,next)=>{
+app.delete('/api/promoCodes/:id',async(req,res,next)=>{
     const{id}=req.params
     try{
         const deletedPromo=await PromoCode.findByIdAndDelete(id)
@@ -967,7 +955,7 @@ app.delete('/promoCodes/:id',async(req,res,next)=>{
         next(e)
     }
 })
-app.patch('/promoCodes/:id',async(req,res,next)=>{
+app.patch('/api/promoCodes/:id',async(req,res,next)=>{
     const {id}=req.params;
     console.log(id)
     console.log(req.body)
