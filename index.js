@@ -1,14 +1,13 @@
 const express=require('express')
 const app=express()
-const port=3000
+require('dotenv').config()
+const port=process.env.PORT || 5000
 const cors=require('cors')
 const connectDB = require('./db')
 const User = require('./models/User')
 const bcrypt = require('bcrypt')
 const jwt = require('jsonwebtoken');
 const SSLCommerzPayment = require('sslcommerz-lts')
-const store_id = 'meetu674077e4148f5'
-const store_passwd = 'meetu674077e4148f5@ssl'
 const is_live = false //true for live, false for sandbox
 const { v4: uuidv4 } = require('uuid');
 const mongoose=require('mongoose')
@@ -19,16 +18,19 @@ const Appointment = require('./models/Appointment')
 const TestRecommendation = require('./models/TestRecommendation')
 const MedicinInstruction = require('./models/MedicinInstruction')
 const Prescription = require('./models/Prescription')
-const TestResult = require('./models/TestResult')
 const ApplyForAppointment = require('./models/ApplyForAppointment')
 const upload = require('./middlewares/multer.middleware')
 const uploadOnCloudinary=require('./utils/cloudinary')
 const MedicalRecord = require('./models/MedicalRecord')
-const { sl } = require('date-fns/locale')
 const PromoCode = require('./models/PromoCode/PromoCode')
-const { format, parseISO, isEqual } = require('date-fns')
+const { format, isEqual } = require('date-fns')
 app.use(cors())
 app.use(express.json())
+
+const storeId = process.env.STORE_ID;
+const storePassword = process.env.STORE_PASSWORD;
+const jwtSecret=process.env.JWT_SECRET
+const databaseUrl=process.env.DATABASE_URL
 
 /**Health Check */
 app.get('/health',(req,res)=>{
@@ -96,43 +98,6 @@ app.post('/register',upload.fields([{ name: "profile" }, { name: "document" }]),
         next(error)
     }
 })
-// app.post('/registerDoctor', upload.fields([{ name: "profile" }, { name: "documents" }]),async(req,res,next)=>{
-//     console.log(req.body)
-//     console.log
-//     // const {username,email,password,category,schedule,fee}=req.body
-//     // const updateRole=req.body.role?req.body.role:'patient'
-//     // if(!username || !email || !password){
-//     //     throw error('Invalid Data',400)
-//     // }
-//     // try{
-//     //     let user=await User.findOne({email})
-//     //     if(user){
-//     //         throw error('User already exists',400)
-//     //     }
-//     //     user=new User({username,email,password,role:updateRole,rowPass:password})
-//     //     const salt = bcrypt.genSaltSync(10);
-//     //     const hash=bcrypt.hashSync(password,salt)
-//     //     user.password=hash
-//     //     user.role==='patient' && await Patient.create({
-//     //         _id:user._id,
-//     //         image:''
-//     //     })
-//     //     user.role==='doctor' && await Doctor.create({
-//     //         _id:user._id,
-//     //         image:'',
-//     //         category,
-//     //         schedule,
-//     //         fee
-//     //     })
-//     //     user.role==='admin' && await Admin.create({
-//     //         _id:user._id
-//     //     })
-//     //     await user.save()
-//     //     return res.status(200).json({message:'User Created Successfully',user})
-//     // }catch(error){
-//     //     next(error)
-//     // }
-// })
 app.post('/login',async(req,res,next)=>{
     const {email,password}=req.body
     if(!email || !password){
@@ -148,7 +113,7 @@ app.post('/login',async(req,res,next)=>{
             throw error('Invalid Credencial',400)
         }
         delete user._doc.password
-        const token=jwt.sign(user._doc,'secret-key')
+        const token=jwt.sign(user._doc,jwtSecret)
         const payload={
             id:user._id,
             username:user.username,
@@ -473,28 +438,6 @@ app.delete("/doctors/:doctorID/schedule/:scheduleID/slot/:slotID", async (req, r
     }
   });
 
-/**Admin */
-app.get('/admin/:id',async(req,res)=>{
-    const {id}=req.params
-    const admin=await Admin.findById(id)
-    if(!admin){
-        res.status(400).json({message:'admin not found'})
-    }
-    res.status(200).json(admin)
-})
-app.patch('/admin/:id',async(req,res)=>{
-    const {id}=req.params
-    const {firstName,lastName,avator}=req.body
-    const updatedAdmin=await Admin.findByIdAndUpdate(id,
-        {$set:{
-            firstName:firstName,
-            lastName:lastName,
-            avator:avator
-        }}
-    )
-    res.status(200).json({message:'updated successfully',updatedAdmin})
-})
-
 /**Appointment */
 app.post('/appointment',async(req,res)=>{
     console.log(req.body)
@@ -673,35 +616,6 @@ app.delete('/medicinInstructions/:id',async(req,res)=>{
     res.status(200).json({message:'Deleted Successfully'})
 })
 
-/**TestResults */
-// app.post('/testResults',async(req,res)=>{
-//     const {name,image,appointmentID}=req.body
-//     const testResult=await TestResult.create({
-//         name,
-//         image
-//     })
-//     await Appointment.findByIdAndUpdate(appointmentID,{
-//         $push:{testResults:testResult._id}
-//     })
-//     res.status(200).json(testResult)
-// })
-// app.patch('/testResults/:id',async(req,res)=>{
-//     const {id}=req.params
-//     const {name,image}=req.body
-//     const updatedTest=await TestResult.findByIdAndUpdate(id,{
-//         $set:{
-//             name,
-//             image
-//         }
-//     },{new:true})
-//     res.status(200).json({message:'Updated Successfully'})
-// })
-// app.delete('/testResults/:id',async(req,res)=>{
-//     const {id}=req.params
-//     const deletedTest=await TestResult.findByIdAndDelete(id)
-//     res.status(200).json({message:'Deleted Successfully'})
-// })
-
 /**Apply for Appointment */
 app.post('/applyForAppointments',async(req,res)=>{
     const {date,patientName,doctorID,status,patientID}=req.body
@@ -823,13 +737,10 @@ app.post('/initApplyForPayment', async(req, res) => {
         ship_country: 'Bangladesh',
     };
     
-    const sslcz = new SSLCommerzPayment(store_id, store_passwd, is_live)
+    const sslcz = new SSLCommerzPayment(storeId,storePassword,is_live)
     sslcz.init(data).then(apiResponse => {
-        // Redirect the user to payment gateway
         let GatewayPageURL = apiResponse.GatewayPageURL
         res.status(200).json(GatewayPageURL)
-        // res.redirect(GatewayPageURL)
-        // console.log('Redirecting to: ', GatewayPageURL)
     });
     let applyAppointmentID=null;
     let appointmentID=null;
@@ -1004,7 +915,7 @@ app.patch('/promoCodes/:id',async(req,res,next)=>{
 })
 
 
-connectDB('mongodb+srv://hossantopu:hdp5nONqO369IUbK@digitalhospital.iatbk.mongodb.net/digital_hospital')
+connectDB(databaseUrl)
 .then(()=>{
     app.listen(port,()=>{
         console.log('server is running!')

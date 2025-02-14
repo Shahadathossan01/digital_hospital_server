@@ -9,7 +9,7 @@ const prescriptionSchema=new Schema({
         type:Schema.Types.ObjectId,
         ref:'MedicinInstruction'
     }]
-})
+},{ timestamps: true })
 const Prescription=model('Prescription',prescriptionSchema)
 
 module.exports=Prescription
