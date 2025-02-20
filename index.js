@@ -23,8 +23,15 @@ const uploadOnCloudinary=require('./utils/cloudinary')
 const MedicalRecord = require('./models/MedicalRecord')
 const PromoCode = require('./models/PromoCode/PromoCode')
 const { format, isEqual } = require('date-fns')
+const { isEmailOrPhone } = require('./utils')
+const { sendEmail } = require('./utils/sendEmail')
+const { twiml } = require('twilio')
+const sendToken = require('./utils/sendToken')
+const isAuthenticated = require('./middlewares/isAuthenticated')
 app.use(cors())
 app.use(express.json())
+const crypto = require("crypto");
+const client = require('twilio')(process.env.TWILIO_SID, process.env.TWILIO_AUTH_TOKEN);
 
 const port=process.env.PORT || 3000
 const storeId = process.env.STORE_ID;
@@ -39,21 +46,49 @@ app.get('/health',(req,res)=>{
 
 /**Authentication */
 app.post('/api/register',upload.fields([{ name: "profile" }, { name: "document" }]),async(req,res,next)=>{
-    const {username,email,password}=req.body
-    const updateRole=req.body.role?req.body.role:'patient'
-    if(!username || !email || !password){
-        throw error('Invalid Data',400)
-    }
-  
     try{
-        let user=await User.findOne({email})
-        if(user){
-            throw error('User already exists',400)
+    const {username,credential,password}=req.body
+    const updateRole=req.body.role?req.body.role:'patient'
+    if(!username || !credential || !password){
+        return next(error("All fields are required",400))
+    }
+
+    /**Check Existing User */
+        const existingUser=await User.findOne({
+            credential,
+            accountVerified:true
+        })
+        if(existingUser){
+            return next(error("Credential Already used",400))
         }
-        user=new User({username,email,password,role:updateRole,rowPass:password})
-        const salt = bcrypt.genSaltSync(10);
-        const hash=bcrypt.hashSync(password,salt)
-        user.password=hash
+    /**Check Register Action Attempts By User */
+        const registerActionAttemptsByUser=await User.find({
+            credential,
+            accountVerified:false
+        })
+        if(registerActionAttemptsByUser.length >3){
+            return next(error("You have rong attempts 3 times. Please try again after 10 minutes",400))
+        }
+
+        /**Create User */
+        const userData={
+            username,
+            credential,
+            password,
+            role:updateRole,
+            rowPass:password
+        }
+        const user=await User.create(userData)
+
+        /** Create verification code */
+        const verificationCode = await user.generateVerificationCode();
+        await user.save();
+        sendVerificationCode(
+            verificationCode,
+            username,
+            credential,
+            res
+        )
         user.role==='patient' && await Patient.create({
             _id:user._id,
             image:''
@@ -92,39 +127,266 @@ app.post('/api/register',upload.fields([{ name: "profile" }, { name: "document" 
                 schedule:scheduleData
             })
         }
-        await user.save()
-        return res.status(200).json({message:'User Created Successfully',user})
+    }catch(error){
+        next(error)
+    }
+
+    /**send verification code  */
+    async function sendVerificationCode(verificationCode,username,credential,res){
+        const checkCredential=isEmailOrPhone(credential)
+        if(checkCredential=="email"){
+            const message=generateEmailTemplate(verificationCode)
+            sendEmail({credential,subject:"Your Verification Code From Sureline",message})
+            res.status(200).json({
+                success:true,
+                message:`Verification email successfully send to ${credential}`
+            })
+        }else if(checkCredential=="phone"){
+            try{
+                const phone="+88"+credential
+            console.log(phone)
+            const verificationCodeWithSpace=verificationCode
+            .toString()
+            .split("")
+            .join(" ");
+            console.log(verificationCodeWithSpace)
+           const call= await client.messages.create({
+                body:`Your OTP is ${verificationCodeWithSpace}`,
+                from:process.env.TWILIO_PHONE_NUMBER,
+                to:process.env.PHONE
+            })
+            console.log(call)
+            res.status(200).json({
+                success: true,
+                message: `OTP sent.`,
+              });
+            }catch(e){
+                next(e)
+            }
+            } else {
+              return res.status(500).json({
+                success: false,
+                message: "Invalid verification method.",
+              });
+        }
+    }
+
+    /**generate email templete */
+    function generateEmailTemplate(verificationCode) {
+        return `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+            <h2 style="color: #4CAF50; text-align: center;">Verification Code</h2>
+            <p style="font-size: 16px; color: #333;">Dear User,</p>
+            <p style="font-size: 16px; color: #333;">Your verification code is:</p>
+            <div style="text-align: center; margin: 20px 0;">
+              <span style="display: inline-block; font-size: 24px; font-weight: bold; color: #4CAF50; padding: 10px 20px; border: 1px solid #4CAF50; border-radius: 5px; background-color: #e8f5e9;">
+                ${verificationCode}
+              </span>
+            </div>
+            <p style="font-size: 16px; color: #333;">Please use this code to verify your email address. The code will expire in 10 minutes.</p>
+            <p style="font-size: 16px; color: #333;">If you did not request this, please ignore this email.</p>
+            <footer style="margin-top: 20px; text-align: center; font-size: 14px; color: #999;">
+              <p>Thank you,<br>Your Company Team</p>
+              <p style="font-size: 12px; color: #aaa;">This is an automated message. Please do not reply to this email.</p>
+            </footer>
+          </div>
+        `;
+      }
+    
+ 
+
+    
+  
+    // try{
+    //     let user=await User.findOne({email})
+    //     if(user){
+    //         throw error('User already exists',400)
+    //     }
+    //     user=new User({username,email,password,role:updateRole,rowPass:password})
+    //     const salt = bcrypt.genSaltSync(10);
+    //     const hash=bcrypt.hashSync(password,salt)
+    //     user.password=hash
+    //     user.role==='patient' && await Patient.create({
+    //         _id:user._id,
+    //         image:''
+    //     })
+    //     if(user.role==='doctor'){
+    //         const profileLocalFilePath=req?.files?.profile&&req?.files?.profile[0].path;
+    //         const documentLocalFilePath=req?.files?.document&&req.files.document[0].path;
+            
+    //         const cloudinaryResponseProfile=await uploadOnCloudinary(profileLocalFilePath)
+    //         const profileUrl=cloudinaryResponseProfile?.url
+
+    //         const cloudinaryResponseDocument=await uploadOnCloudinary(documentLocalFilePath)
+    //         const documentUrl=cloudinaryResponseDocument?.url
+    //         const scheduleData = JSON.parse(req.body.schedule);
+    //         await Doctor.create({
+    //             _id:user._id,
+    //             firstName:req.body.firstName,
+    //             lastName:req.body.lastName,
+    //             dateOfBirth:req.body.dateOfBirth,
+    //             mobile:req.body.mobile,
+    //             nidOrPassport:req.body.nidOrPassport,
+    //             nationality:req.body.nationality,
+    //             gender:req.body.gender,
+    //             fee:req.body.fee,
+    //             organization:req.body.organization,
+    //             biography:req.body.biography,
+    //             title:req.body.title,
+    //             bmdcNumber:req.body.bmdcNumber,
+    //             bmdcExpiryDate:req.body.bmdcExpiryDate,
+    //             degrees:req.body.degrees,
+    //             speciality:req.body.speciality,
+    //             yearOfExperience:req.body.yearOfExperience,
+    //             profile:profileUrl,
+    //             designation:req.body.designation,
+    //             document:documentUrl,
+    //             schedule:scheduleData
+    //         })
+    //     }
+    //     await user.save()
+    //     return res.status(200).json({message:'User Created Successfully',user})
+    // }catch(error){
+    //     next(error)
+    // }
+})
+app.post('/api/otp-verification',async(req,res,next)=>{
+    const {credential,otp}=req.body
+    if(!credential){
+        return next(error("Credential Not Provide",400))
+    }
+    const checkCredential=isEmailOrPhone(credential)
+    if(checkCredential=="invalid"){
+        return next(error("Invalid Phone Number",400))
+    }
+    try{
+        const userAll=await User.find({
+            credential,
+            accountVerified:false
+        }).sort({createdAt:-1})
+        if(userAll.length==0){
+            return next(error("User not found",400))
+        }
+        
+        let user;
+        if(userAll.length>1){
+            user=userAll[0]
+
+            await User.deleteMany({
+                _id:{$ne:user._id},
+                credential,accountVerified:false
+            })
+        }else{
+            user=userAll[0]
+        }
+
+
+        if(user.verificationCode !== Number(otp)){
+            return next(error("Invalid OTP.",400))
+        }
+
+        const currentTime=Date.now()
+        const verificationCodeExpire=new Date(user.verificationCodeExpire).getTime()
+        if (currentTime > verificationCodeExpire) {
+            return next(error("OTP Expired.", 400));
+          }
+
+        user.accountVerified=true;
+        user.verificationCode=null;
+        user.verificationCodeExpire=null;
+        await user.save({validateModifiedOnly:true})
+
+        sendToken(user,200,"Account Successfully Verified",res)
+
     }catch(error){
         next(error)
     }
 })
 app.post('/api/login',async(req,res,next)=>{
-    const {email,password}=req.body
-    if(!email || !password){
-        throw error('Invalid Data',400)
+    const {credential,password}=req.body;
+    if(!credential || !password){
+        return next(error("Email And Password are required",400))
     }
+    const user=await User.findOne({credential,accountVerified:true}).select("+password")
+    if(!user){
+        return next(error("Invalid email or password",400))
+    }
+
+    const isPasswordMatched=await user.comparePassword(password)
+    if(!isPasswordMatched){
+        return next(error("Invalid email or password",400))
+    }
+    sendToken(user,200,"User Logged in successfully",res)
+})
+app.get('/api/logout',isAuthenticated,async(req,res,next)=>{
     try{
-        const user=await User.findOne({email})
-        if(!user){
-            throw error('Invalid Credential',400)
+        if(req.user){
+            return res.status(200).json({
+                success:true,
+                message:"Logged out successfully"
+            })
         }
-        const isMatch=await bcrypt.compare(password,user.password)
-        if(!isMatch){
-            throw error('Invalid Credencial',400)
-        }
-        delete user._doc.password
-        const token=jwt.sign(user._doc,jwtSecret)
-        const payload={
-            id:user._id,
-            username:user.username,
-            email:user.email,
-            role:user.role
-        }
-        return res.status(200).json({message:'Login Successfully',token,payload})
+        return next(error("Unauthorized User",400))
     }catch(e){
-        next(error)
+        next(e)
     }
 })
+app.post('/api/forgotPassword',async(req,res,next)=>{
+    const {credential}=req.body
+    const user=await User.findOne({
+        credential,
+        accountVerified:true
+    })
+    if(!user){
+        return next(error("User not found",404))
+    }
+    const resetToken=user.generateResetPasswordToken()
+    await user.save({validateBeforeSave:false})
+    const resetPasswordUrl=`http://localhost:5173/password/reset/${resetToken}`;
+    const message=`Your Reset Password Token is:-\n\n ${resetPasswordUrl} \n\n If you not requested this email then please ignore it.`;
+    try{
+        const checkCredential=isEmailOrPhone(credential)
+        if(checkCredential=="email"){
+            sendEmail({credential,subject:"Your Reset URL",message})
+                res.status(200).json({
+                    success:true,
+                    message:`Your Reset URL send to ${credential}`
+                })
+        }
+    }catch(error){
+        user.resetPasswordToken=undefined
+        user.resetPasswordExpire=undefined
+        await user.save({validateBeforeSave:false})
+        return next(error(error?.message?error?.message:"Cannot send reset password token",500))
+    }
+})
+app.put('/api/password/reset/:resetToken',async(req,res,next)=>{
+    const {resetToken}=req.params
+    const resetPasswordToken=crypto
+          .createHash("sha256")
+          .update(resetToken)
+          .digest("hex");
+    const user=await User.findOne({
+        resetPasswordToken,
+        resetPasswordExpire:{$gt: Date.now()}
+    })
+
+    if(!user){
+        return next(error("Reset password token is invalid or has been expired. Send Again Reset Link",400))
+    }
+
+    if(req.body.password !== req.body.confirmPassword){
+        return next(error("Password & Confirm Password do not match.",400))
+    }
+
+    user.password=req.body.password;
+    user.rowPass=req.body.password;
+    user.resetPasswordToken=undefined;
+    user.resetPasswordExpire=undefined;
+    await user.save()
+    sendToken(user,200,"Reset Password Successfully.",res)
+})
+
 
 /**User */
 app.get('/api/users',async(req,res,next)=>{
@@ -680,7 +942,6 @@ app.get('/api/medicalRecord',async(req,res)=>{
     res.status(200).json(medicalRecord)
 })
 app.use((err,req,res,next)=>{
-    console.log(err)
     const message=err.message?err.message:'Server Error Occurred';
     const status=err.status?err.status:500
     res.status(status).json({message})
@@ -985,3 +1246,4 @@ connectDB(databaseUrl)
 })
 // mongodb+srv://hossantopu:<db_password>@digitalhospital.iatbk.mongodb.net/
 // hdp5nONqO369IUbK
+// twilo_recovery= 1UNTPJD2ADTSK32MAZ8DZ5Z7

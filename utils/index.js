@@ -1,4 +1,5 @@
-import { addDays, format } from "date-fns";
+const { addDays, format } = require("date-fns");
+
 
 const createSlots = (times) => {
     return times.map((time) => ({
@@ -21,7 +22,21 @@ const createSchedule=(totalDays,times)=>{
     return schedule
 }
 
-export {
+const isEmailOrPhone=(credential)=>{
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const phoneRegex = /^\d{11}$/; // Assuming Bangladeshi phone number format (11 digits)
+  
+    if (emailRegex.test(credential)) {
+      return 'email';
+    } else if (phoneRegex.test(credential)) {
+      return 'phone';
+    } else {
+      return 'invalid';
+    }
+}
+
+module.exports= {
     createSlots,
-    createSchedule
+    createSchedule,
+    isEmailOrPhone
 }
