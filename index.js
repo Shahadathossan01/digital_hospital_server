@@ -31,12 +31,12 @@ const isAuthenticated = require('./middlewares/isAuthenticated')
 app.use(cors())
 app.use(express.json())
 const crypto = require("crypto");
+const removeUnverifiedAccounts = require('./automation/removeUnverifiedAccount')
 const client = require('twilio')(process.env.TWILIO_SID, process.env.TWILIO_AUTH_TOKEN);
 
 const port=process.env.PORT || 3000
 const storeId = process.env.STORE_ID;
 const storePassword = process.env.STORE_PASSWORD;
-const jwtSecret=process.env.JWT_SECRET
 const databaseUrl=process.env.DATABASE_URL
 
 /**Health Check */
@@ -192,63 +192,6 @@ app.post('/api/register',upload.fields([{ name: "profile" }, { name: "document" 
           </div>
         `;
       }
-    
- 
-
-    
-  
-    // try{
-    //     let user=await User.findOne({email})
-    //     if(user){
-    //         throw error('User already exists',400)
-    //     }
-    //     user=new User({username,email,password,role:updateRole,rowPass:password})
-    //     const salt = bcrypt.genSaltSync(10);
-    //     const hash=bcrypt.hashSync(password,salt)
-    //     user.password=hash
-    //     user.role==='patient' && await Patient.create({
-    //         _id:user._id,
-    //         image:''
-    //     })
-    //     if(user.role==='doctor'){
-    //         const profileLocalFilePath=req?.files?.profile&&req?.files?.profile[0].path;
-    //         const documentLocalFilePath=req?.files?.document&&req.files.document[0].path;
-            
-    //         const cloudinaryResponseProfile=await uploadOnCloudinary(profileLocalFilePath)
-    //         const profileUrl=cloudinaryResponseProfile?.url
-
-    //         const cloudinaryResponseDocument=await uploadOnCloudinary(documentLocalFilePath)
-    //         const documentUrl=cloudinaryResponseDocument?.url
-    //         const scheduleData = JSON.parse(req.body.schedule);
-    //         await Doctor.create({
-    //             _id:user._id,
-    //             firstName:req.body.firstName,
-    //             lastName:req.body.lastName,
-    //             dateOfBirth:req.body.dateOfBirth,
-    //             mobile:req.body.mobile,
-    //             nidOrPassport:req.body.nidOrPassport,
-    //             nationality:req.body.nationality,
-    //             gender:req.body.gender,
-    //             fee:req.body.fee,
-    //             organization:req.body.organization,
-    //             biography:req.body.biography,
-    //             title:req.body.title,
-    //             bmdcNumber:req.body.bmdcNumber,
-    //             bmdcExpiryDate:req.body.bmdcExpiryDate,
-    //             degrees:req.body.degrees,
-    //             speciality:req.body.speciality,
-    //             yearOfExperience:req.body.yearOfExperience,
-    //             profile:profileUrl,
-    //             designation:req.body.designation,
-    //             document:documentUrl,
-    //             schedule:scheduleData
-    //         })
-    //     }
-    //     await user.save()
-    //     return res.status(200).json({message:'User Created Successfully',user})
-    // }catch(error){
-    //     next(error)
-    // }
 })
 app.post('/api/otp-verification',async(req,res,next)=>{
     const {credential,otp}=req.body
@@ -390,7 +333,9 @@ app.put('/api/password/reset/:resetToken',async(req,res,next)=>{
 
 /**User */
 app.get('/api/users',async(req,res,next)=>{
-    const users=await User.find()
+    const users=await User.find({
+        accountVerified:true
+    })
     res.status(200).json(users)
 })
 app.delete('/api/users/:id',async(req,res)=>{
@@ -989,6 +934,7 @@ app.post('/api/initApplyForPayment', async(req, res) => {
     const sslcz = new SSLCommerzPayment(storeId,storePassword,is_live)
     sslcz.init(data).then(apiResponse => {
         let GatewayPageURL = apiResponse.GatewayPageURL
+        console.log(GatewayPageURL)
         res.status(200).json(GatewayPageURL)
     });
     let applyAppointmentID=null;
@@ -1236,7 +1182,7 @@ app.patch('/api/promoCodes/:id',async(req,res,next)=>{
     }
 })
 
-
+removeUnverifiedAccounts()
 connectDB(databaseUrl)
 .then(()=>{
     app.listen(port,()=>{
