@@ -285,7 +285,7 @@ app.post('/api/forgotPassword',async(req,res,next)=>{
     }
     const resetToken=user.generateResetPasswordToken()
     await user.save({validateBeforeSave:false})
-    const resetPasswordUrl=`http://localhost:5173/password/reset/${resetToken}`;
+    const resetPasswordUrl=`${process.env.FRONT_END_BASE_URL}/password/reset/${resetToken}`;
     const message=`Your Reset Password Token is:-\n\n ${resetPasswordUrl} \n\n If you not requested this email then please ignore it.`;
     try{
         const checkCredential=isEmailOrPhone(credential)
@@ -329,7 +329,6 @@ app.put('/api/password/reset/:resetToken',async(req,res,next)=>{
     await user.save()
     sendToken(user,200,"Reset Password Successfully.",res)
 })
-
 
 /**User */
 app.get('/api/users',async(req,res,next)=>{
@@ -904,7 +903,7 @@ app.post('/api/initApplyForPayment', async(req, res) => {
         total_amount: totalFee,
         currency: 'BDT',
         tran_id: transactionId, // use unique tran_id for each api call
-        success_url: `http://194.164.149.161:3000/payment/success`,
+        success_url: `${process.env.API_BASE_URL}/payment/success`,
         fail_url: `${process.env.API_BASE_URL}/fail`,
         cancel_url: `${process.env.API_BASE_URL}/cancel`,
         ipn_url: `${process.env.API_BASE_URL}/ipn`,
@@ -983,7 +982,6 @@ app.post('/api/initApplyForPayment', async(req, res) => {
     })
 
     app.post('/payment/success',async(req,res)=>{
-        console.log("success")
         await ApplyForAppointment.findByIdAndUpdate(applyAppointmentID,{
             $set:{status:'Payed'}
         },{new:true})
@@ -1190,6 +1188,3 @@ connectDB(databaseUrl)
     })
     console.log('database is connected')
 })
-// mongodb+srv://hossantopu:<db_password>@digitalhospital.iatbk.mongodb.net/
-// hdp5nONqO369IUbK
-// twilo_recovery= 1UNTPJD2ADTSK32MAZ8DZ5Z7
