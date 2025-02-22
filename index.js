@@ -67,7 +67,7 @@ app.post('/api/register',upload.fields([{ name: "profile" }, { name: "document" 
             accountVerified:false
         })
         if(registerActionAttemptsByUser.length >3){
-            return next(error("You have rong attempts 3 times. Please try again after 10 minutes",400))
+            return next(error("You have rong attempts 3 times. Please try again after 1 hour.",400))
         }
 
         /**Create User */
