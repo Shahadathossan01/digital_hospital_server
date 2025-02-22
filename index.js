@@ -904,10 +904,10 @@ app.post('/api/initApplyForPayment', async(req, res) => {
         total_amount: totalFee,
         currency: 'BDT',
         tran_id: transactionId, // use unique tran_id for each api call
-        success_url: `http://http://194.164.149.161/success?transactionId=${transactionId}`,
-        fail_url: 'http://http://194.164.149.161/fail',
-        cancel_url: 'http://http://194.164.149.161//cancel',
-        ipn_url: 'http://http://194.164.149.161/ipn',
+        success_url: `${process.end.VITE_API_BASE_URL}/success`,
+        fail_url: `${process.end.VITE_API_BASE_URL}/fail`,
+        cancel_url: `${process.end.VITE_API_BASE_URL}/cancel`,
+        ipn_url: `${process.end.VITE_API_BASE_URL}/ipn`,
         shipping_method: 'Courier',
         product_name: 'Computer.',
         product_category: 'Electronic',
@@ -984,6 +984,7 @@ app.post('/api/initApplyForPayment', async(req, res) => {
     })
 
     app.post('/success',async(req,res)=>{
+        console.log("success")
         await ApplyForAppointment.findByIdAndUpdate(applyAppointmentID,{
             $set:{status:'Payed'}
         },{new:true})
@@ -1002,7 +1003,7 @@ app.post('/api/initApplyForPayment', async(req, res) => {
                 arrayFilters: [{ "slot._id": slotID},{"schedule._id":scheduleID}],
               }
           );
-        res.redirect(`http://localhost:5173/success/${transactionId}`)
+        res.redirect(`${process.env.FRONT_END_BASE_URL}/success/${transactionId}`)
     })
     app.post('/cancel',async(req,res)=>{
         await ApplyForAppointment.findByIdAndDelete(applyAppointmentID)
@@ -1013,7 +1014,7 @@ app.post('/api/initApplyForPayment', async(req, res) => {
         await Patient.findByIdAndUpdate(patientID,{
             $pull:{appointments:appointmentID}
         })
-        res.redirect('http://localhost:5173/cancel')
+        res.redirect(`${process.env.FRONT_END_BASE_URL}/cancel`)
     })
     app.post('/fail',async(req,res)=>{
         await ApplyForAppointment.findByIdAndDelete(applyAppointmentID)
@@ -1024,7 +1025,7 @@ app.post('/api/initApplyForPayment', async(req, res) => {
         await Patient.findByIdAndUpdate(patientID,{
             $pull:{appointments:appointmentID}
         })
-        res.redirect('http://localhost:5173/fail')
+        res.redirect(`${process.env.FRONT_END_BASE_URL}/fail`)
     })
 })
 
