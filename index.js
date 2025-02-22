@@ -904,7 +904,7 @@ app.post('/api/initApplyForPayment', async(req, res) => {
         total_amount: totalFee,
         currency: 'BDT',
         tran_id: transactionId, // use unique tran_id for each api call
-        success_url: `${process.env.API_BASE_URL}/success`,
+        success_url: `http://194.164.149.161:3000/success`,
         fail_url: `${process.env.API_BASE_URL}/fail`,
         cancel_url: `${process.env.API_BASE_URL}/cancel`,
         ipn_url: `${process.env.API_BASE_URL}/ipn`,
@@ -934,7 +934,6 @@ app.post('/api/initApplyForPayment', async(req, res) => {
     const sslcz = new SSLCommerzPayment(storeId,storePassword,is_live)
     sslcz.init(data).then(apiResponse => {
         let GatewayPageURL = apiResponse.GatewayPageURL
-        console.log(GatewayPageURL)
         res.status(200).json(GatewayPageURL)
     });
     let applyAppointmentID=null;
@@ -985,25 +984,25 @@ app.post('/api/initApplyForPayment', async(req, res) => {
 
     app.post('/success',async(req,res)=>{
         console.log("success")
-        await ApplyForAppointment.findByIdAndUpdate(applyAppointmentID,{
-            $set:{status:'Payed'}
-        },{new:true})
-       await Doctor.updateOne(
-            { 
-              _id: doctorID, 
-              "schedule._id":scheduleID,
-              "schedule.slots._id":slotID
-            },
-            {
-              $set: {
-                "schedule.$[schedule].slots.$[slot].status": "booked",
-              }
-            },
-            {
-                arrayFilters: [{ "slot._id": slotID},{"schedule._id":scheduleID}],
-              }
-          );
-        res.redirect(`${process.env.FRONT_END_BASE_URL}/success/${transactionId}`)
+    //     await ApplyForAppointment.findByIdAndUpdate(applyAppointmentID,{
+    //         $set:{status:'Payed'}
+    //     },{new:true})
+    //    await Doctor.updateOne(
+    //         { 
+    //           _id: doctorID, 
+    //           "schedule._id":scheduleID,
+    //           "schedule.slots._id":slotID
+    //         },
+    //         {
+    //           $set: {
+    //             "schedule.$[schedule].slots.$[slot].status": "booked",
+    //           }
+    //         },
+    //         {
+    //             arrayFilters: [{ "slot._id": slotID},{"schedule._id":scheduleID}],
+    //           }
+    //       );
+    //     res.redirect(`${process.env.FRONT_END_BASE_URL}/success/${transactionId}`)
     })
     app.post('/cancel',async(req,res)=>{
         await ApplyForAppointment.findByIdAndDelete(applyAppointmentID)
