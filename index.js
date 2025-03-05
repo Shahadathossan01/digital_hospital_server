@@ -342,7 +342,7 @@ app.delete('/api/users/:id',async(req,res)=>{
     const deleteUser=await User.findByIdAndDelete(id)
     deleteUser.role==='patient' && await Patient.findByIdAndDelete(id)
     deleteUser.role==='doctor' && await Doctor.findByIdAndDelete(id)
-    deleteUser.role==='admin' && await Admin.findByIdAndDelete(id)
+    // deleteUser.role==='admin' && await Admin.findByIdAndDelete(id)
     res.status(200).json({message:'User Deleted Successfully'})
 })
 
@@ -691,7 +691,6 @@ app.patch('/api/appointments/:id',async(req,res)=>{
     })
     res.status(200).json({message:'Updated Successfully',updatedAppointment})
 })
-
 app.get('/api/appointments/:id',async(req,res)=>{
     const {id}=req.params
     const appointment=await Appointment.findById(id).populate('patient').populate('doctor').populate('testRecommendation').populate({
@@ -701,6 +700,16 @@ app.get('/api/appointments/:id',async(req,res)=>{
         },
     })
     res.status(200).json(appointment)
+})
+app.patch('/api/appointments/status/:id',async(req,res)=>{
+    const {id}=req.params
+    console.log(id)
+     await Appointment.findByIdAndUpdate(id,{
+        $set: {
+            status:"completed"
+        }
+    },{new:true})
+    res.status(200).json({success:true,message:"updated status"})
 })
 
 
@@ -739,41 +748,47 @@ app.delete('/api/testRecommendations/:id',async(req,res)=>{
 
 /**Prescription */
 app.post('/api/prescriptions',async(req,res)=>{
-    const {date,diagnosis,instruction,appointmentID}=req.body
+    const {problem,appointmentID}=req.body
     const prescription=await Prescription.create({
-        date:date || new Date(),
-        diagnosis,
-        instruction:instruction ||''
+        problem
     })
     const appointment=await Appointment.findById(appointmentID)
     if(appointment.prescription) return res.status(400).json({message:'Already create an prescription'})
     await Appointment.findByIdAndUpdate(appointmentID,{
         $set:{prescription:prescription._id}
     })
-    const updated= await Appointment.findByIdAndUpdate(appointmentID,{
-        $set: {
-            status:"completed"
-        }
-    },{new:true})
-    console.log(updated)
+    // const updated= await Appointment.findByIdAndUpdate(appointmentID,{
+    //     $set: {
+    //         status:"completed"
+    //     }
+    // },{new:true})
     res.status(200).json(prescription)
 })
 app.patch('/api/prescriptions/:id',async(req,res)=>{
     const {id}=req.params
-    const {date,diagnosis,instruction}=req.body
-    const updatedPrescription=await Prescription.findByIdAndUpdate(id,{
-        $set:{
-            date,
-            diagnosis,
-            instruction
-        }
-    },{new:true})
-    res.status(200).json({message:'Updated Successfully'})
+    console.log(id)
+    const {updatedData}=req.body
+    console.log(updatedData)
+    try{
+        await Prescription.findByIdAndUpdate(id,{
+            $set:{
+                ...updatedData
+            }
+        },{new:true})
+        res.status(200).json({message:'Updated Successfully'})
+    }catch(e){
+        console.log(e)
+    }
 })
 app.delete('/api/prescriptions/:id',async(req,res)=>{
     const {id}=req.params
-    const deletedPrescription=await Prescription.findByIdAndDelete(id)
+    await Prescription.findByIdAndDelete(id)
     res.status(200).json({message:'Deleted Successfully'})
+})
+app.get('/api/prescriptions/:id',async(req,res)=>{
+    const {id}=req.params
+    const prescription=await Prescription.findById(id).populate("medicinInstructions")
+    res.status(200).json(prescription)
 })
 
 /**MedicinInstructions */
@@ -903,9 +918,9 @@ app.post('/api/initApplyForPayment', async(req, res) => {
         total_amount: totalFee,
         currency: 'BDT',
         tran_id: transactionId, // use unique tran_id for each api call
-        success_url: `${process.env.API_BASE_URL}/payment/success`,
-        fail_url: `${process.env.API_BASE_URL}/fail`,
-        cancel_url: `${process.env.API_BASE_URL}/cancel`,
+        success_url: `${process.env.API_BASE_URL}/payment/success?applyAppointmentID=${applyAppointmentID}&doctorID=${doctorID}&scheduleID=${scheduleID}&slotID=${slotID}&transactionId=${transactionId}`,
+        fail_url: `${process.env.API_BASE_URL}/payment/fail`,
+        cancel_url: `${process.env.API_BASE_URL}/payment/cancel`,
         ipn_url: `${process.env.API_BASE_URL}/ipn`,
         shipping_method: 'Courier',
         product_name: 'Computer.',
@@ -982,6 +997,8 @@ app.post('/api/initApplyForPayment', async(req, res) => {
     })
 
     app.post('/payment/success',async(req,res)=>{
+        const { applyAppointmentID, doctorID, scheduleID, slotID, transactionId } = req.query;
+        console.log(applyAppointmentID,doctorID,scheduleID,slotID,transactionId)
         await ApplyForAppointment.findByIdAndUpdate(applyAppointmentID,{
             $set:{status:'Payed'}
         },{new:true})
@@ -1002,7 +1019,7 @@ app.post('/api/initApplyForPayment', async(req, res) => {
           );
         res.redirect(`${process.env.FRONT_END_BASE_URL}/success/${transactionId}`)
     })
-    app.post('/cancel',async(req,res)=>{
+    app.post('/payment/cancel',async(req,res)=>{
         await ApplyForAppointment.findByIdAndDelete(applyAppointmentID)
         await Doctor.findByIdAndUpdate(doctorID,{
             $pull:{applyForAppointments:applyAppointmentID}
@@ -1013,7 +1030,7 @@ app.post('/api/initApplyForPayment', async(req, res) => {
         })
         res.redirect(`${process.env.FRONT_END_BASE_URL}/cancel`)
     })
-    app.post('/fail',async(req,res)=>{
+    app.post('/payment/fail',async(req,res)=>{
         await ApplyForAppointment.findByIdAndDelete(applyAppointmentID)
         await Doctor.findByIdAndUpdate(doctorID,{
             $pull:{applyForAppointments:applyAppointmentID}
