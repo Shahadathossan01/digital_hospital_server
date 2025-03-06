@@ -43,6 +43,10 @@ const prescriptionSchema = new Schema(
       type: String,
       default: "",
     },
+    followUp:{
+      type:String,
+      default:""
+    },
     medicinInstructions: [
       {
         type: Schema.Types.ObjectId,
