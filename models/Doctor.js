@@ -34,7 +34,7 @@ const doctorSchema=new Schema({
     yearOfExperience:Number,
     document:String,
     profile:String,
-    designation:String,
+    signature:String,
     isValid:{
         type:Boolean,
         default:false

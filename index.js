@@ -45,7 +45,7 @@ app.get('/health',(req,res)=>{
 })
 
 /**Authentication */
-app.post('/api/register',upload.fields([{ name: "profile" }, { name: "document" }]),async(req,res,next)=>{
+app.post('/api/register',upload.fields([{ name: "profile" }, { name: "signature" }]),async(req,res,next)=>{
     try{
     const {username,credential,password}=req.body
     const updateRole=req.body.role?req.body.role:'patient'
@@ -95,13 +95,13 @@ app.post('/api/register',upload.fields([{ name: "profile" }, { name: "document" 
         })
         if(user.role==='doctor'){
             const profileLocalFilePath=req?.files?.profile&&req?.files?.profile[0].path;
-            const documentLocalFilePath=req?.files?.document&&req.files.document[0].path;
+            const signatureLocalFilePath=req?.files?.signature&&req.files.signature[0].path;
             
             const cloudinaryResponseProfile=await uploadOnCloudinary(profileLocalFilePath)
             const profileUrl=cloudinaryResponseProfile?.url
 
-            const cloudinaryResponseDocument=await uploadOnCloudinary(documentLocalFilePath)
-            const documentUrl=cloudinaryResponseDocument?.url
+            const cloudinaryResponseSignature=await uploadOnCloudinary(signatureLocalFilePath)
+            const signatureUrl=cloudinaryResponseSignature?.url
             const scheduleData = JSON.parse(req.body.schedule);
             await Doctor.create({
                 _id:user._id,
@@ -123,7 +123,7 @@ app.post('/api/register',upload.fields([{ name: "profile" }, { name: "document" 
                 yearOfExperience:req.body.yearOfExperience,
                 profile:profileUrl,
                 designation:req.body.designation,
-                document:documentUrl,
+                signature:signatureUrl,
                 schedule:scheduleData
             })
         }
