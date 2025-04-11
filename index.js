@@ -1248,7 +1248,6 @@ app.patch('/api/blogs/:id',upload.single('image'),async(req,res)=>{
         ...req.body,
         image:imageUrl
     }
-    
     Object.keys(payload).forEach((key)=>{
         blog[key]=payload[key] ?? blog[key]
     })
