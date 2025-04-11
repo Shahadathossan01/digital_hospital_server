@@ -32,6 +32,7 @@ app.use(cors())
 app.use(express.json())
 const crypto = require("crypto");
 const removeUnverifiedAccounts = require('./automation/removeUnverifiedAccount')
+const Blog = require('./models/Blog')
 const client = require('twilio')(process.env.TWILIO_SID, process.env.TWILIO_AUTH_TOKEN);
 
 const port=process.env.PORT || 3000
@@ -1196,6 +1197,76 @@ app.patch('/api/promoCodes/:id',async(req,res,next)=>{
         next(e)
     }
 })
+
+/**Blog */
+
+app.post('/api/blogs',upload.single('image'),async(req,res)=>{
+    const localFilePath=req.file?.path
+    const cloudinaryResponse=await uploadOnCloudinary(localFilePath)
+    const imageUrl=cloudinaryResponse.url
+    const payload={
+        ...req.body,
+        image:imageUrl
+    }
+    
+    try{
+        const blog=new Blog(payload)
+        await blog.save()
+        res.status(201).json({message:'created successfully'})
+    }catch(e){
+        res.status(400).json({error:e.message})
+    }
+})
+app.get('/api/blogs',async(req,res,next)=>{
+    try {
+        const blogs = await Blog.find().sort({ createdAt: -1 });
+        res.status(200).json(blogs);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+})
+app.get('/api/blogs/:id',async(req,res,next)=>{
+    const {id}=req.params
+    try {
+        const blog = await Blog.findById(id);
+        if (!blog) return res.status(404).json({ message: 'Blog not found' });
+        res.status(200).json(blog);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+})
+app.patch('/api/blogs/:id',upload.single('image'),async(req,res)=>{
+    const {id}=req.params
+    const blog=await Blog.findById(id)
+    if(!blog){
+        res.status(400).json({message:'blog not found'})
+    }
+    const localFilePath=req.file?.path
+    const cloudinaryResponse=await uploadOnCloudinary(localFilePath)
+    const imageUrl=cloudinaryResponse?.url
+    const payload={
+        ...req.body,
+        image:imageUrl
+    }
+    
+    Object.keys(payload).forEach((key)=>{
+        blog[key]=payload[key] ?? blog[key]
+    })
+
+    await blog.save()
+    res.status(200).json({message:'updated successfully'})
+})
+app.delete('/api/blogs/:id',async(req,res,next)=>{
+    const {id}=req.params
+    try {
+        const deletedBlog = await Blog.findByIdAndDelete(id);
+        if (!deletedBlog) return res.status(404).json({ message: 'Blog not found' });
+        res.status(200).json({ message: 'Blog deleted successfully' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+})
+
 
 removeUnverifiedAccounts()
 connectDB(databaseUrl)
