@@ -33,6 +33,7 @@ app.use(express.json())
 const crypto = require("crypto");
 const removeUnverifiedAccounts = require('./automation/removeUnverifiedAccount')
 const Blog = require('./models/Blog')
+const HealthHub = require('./models/HealthHub')
 const client = require('twilio')(process.env.TWILIO_SID, process.env.TWILIO_AUTH_TOKEN);
 
 const port=process.env.PORT || 3000
@@ -126,6 +127,37 @@ app.post('/api/register',upload.fields([{ name: "profile" }, { name: "signature"
                 designation:req.body.designation,
                 signature:signatureUrl,
                 schedule:scheduleData
+            })
+        }
+        if(user.role==='healthHub'){
+            const profileLocalFilePath=req?.files?.profile&&req?.files?.profile[0].path;
+            
+            const cloudinaryResponseProfile=await uploadOnCloudinary(profileLocalFilePath)
+            const profileUrl=cloudinaryResponseProfile?.url
+            await Doctor.create({
+                _id:user._id,
+                nid:req.body.nid || '',
+                pharmacyName:req.body.pharmacyName || '',
+                phanmacyReg:req.body.phanmacyReg || '',
+                country:req.body.country || '',
+                division:req.body.division || '',
+                district:req.body.district || '',
+                upazila:req.body.upazila || '',
+                category:req.body.category || '',
+                description:req.body.description || '',
+                image:profileUrl || '',
+                payment:{
+                    service:req.body.service || '',
+                    number:req.body.number || ''
+                },
+                phone:req.body.phone || '',
+                status:req.body.status || 'pending'
+            })
+            await PromoCode.create({
+                creatorId:user._id,
+                code:req.body.phanmacyReg,
+                percentage: 10,
+                expiryDate: ''
             })
         }
     }catch(error){
@@ -344,6 +376,10 @@ app.delete('/api/users/:id',async(req,res)=>{
     deleteUser.role==='patient' && await Patient.findByIdAndDelete(id)
     deleteUser.role==='doctor' && await Doctor.findByIdAndDelete(id)
     // deleteUser.role==='admin' && await Admin.findByIdAndDelete(id)
+    if(deleteUser.role==='healthHub'){
+        await HealthHub.findByIdAndDelete(id)
+        await PromoCode.deleteMany({ creatorId:id });
+    }
     res.status(200).json({message:'User Deleted Successfully'})
 })
 
@@ -1121,15 +1157,14 @@ app.post('/api/freeAppointments',async(req,res,next)=>{
 /**PromoCode */
 
 app.post('/api/promoCode',async(req,res,next)=>{
-    console.log(req.body)
-    const {code,percentage,expiryDate,usageLimit}=req.body;
-    console.log(code)
+    const {creatorId,code,percentage,expiryDate,usageLimit}=req.body;
     const promoCode=await PromoCode.findOne({code})
     if(promoCode){
         return res.status(400).json({message:"Already use this promoCode"})
     }
 
     const newPromoCode=await PromoCode.create({
+        creatorId,
         code,
         percentage,
         expiryDate,
@@ -1147,14 +1182,14 @@ app.post('/api/promoCodeValidate',async(req,res,next)=>{
         return res.status(400).json({valid:false,message:"Invalid promo code"})
     }
 
-    const now=new Date()
-    if(now>promoCode.expiryDate){
-        return res.status(400).json({valid:false,message:"Promo Code expired"})
-    }
+    // const now=new Date()
+    // if(now>promoCode.expiryDate){
+    //     return res.status(400).json({valid:false,message:"Promo Code expired"})
+    // }
 
-    if(promoCode.users.length >promoCode.usageLimit){
-        return res.status(400).json({valid:false,message:"Promo code user is over"})
-    }
+    // if(promoCode.users.length >promoCode.usageLimit){
+    //     return res.status(400).json({valid:false,message:"Promo code user is over"})
+    // }
     res.status(200).json({valid:true,percentage:promoCode.percentage})
 })
 
@@ -1180,8 +1215,6 @@ app.delete('/api/promoCodes/:id',async(req,res,next)=>{
 })
 app.patch('/api/promoCodes/:id',async(req,res,next)=>{
     const {id}=req.params;
-    console.log(id)
-    console.log(req.body)
     try{
         const updatedData=await PromoCode.findByIdAndUpdate(id,{
             $set:{
@@ -1266,6 +1299,35 @@ app.delete('/api/blogs/:id',async(req,res,next)=>{
     }
 })
 
+/**Health Hub */
+app.get('/api/healthHub',async(req,res,next)=>{
+    try {
+        const healthHub = await HealthHub.find().sort({ createdAt: -1 });
+        res.status(200).json(healthHub);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+})
+app.patch('/api/healthHub/:id',upload.single('image'),async(req,res)=>{
+    const {id}=req.params
+    const healthHub=await HealthHub.findById(id)
+    if(!healthHub){
+        res.status(400).json({message:'HealthHub not found'})
+    }
+    const localFilePath=req.file?.path
+    const cloudinaryResponse=await uploadOnCloudinary(localFilePath)
+    const imageUrl=cloudinaryResponse?cloudinaryResponse?.url:''
+    const payload={
+        ...req.body,
+        image:imageUrl || ''
+    }
+    Object.keys(payload).forEach((key)=>{
+        healthHub[key]=payload[key] ?? healthHub[key]
+    })
+
+    await healthHub.save()
+    res.status(200).json({message:'updated successfully'})
+})
 
 removeUnverifiedAccounts()
 connectDB(databaseUrl)

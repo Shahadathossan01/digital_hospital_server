@@ -2,6 +2,10 @@ const mongoose=require("mongoose")
 const {Schema,model}=mongoose
 
 const promoCodeSchema=new Schema({
+    creatorId:{
+        type:Schema.Types.ObjectId,
+        ref:'User'
+    },
     code:{
         type:String,
         require:true,
@@ -13,7 +17,6 @@ const promoCodeSchema=new Schema({
     },
     expiryDate:{
         type:Date,
-        require:true
     },
     usageLimit:{
         type:Number,
