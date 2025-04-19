@@ -55,6 +55,15 @@ app.post('/api/register',upload.fields([{ name: "profile" }, { name: "signature"
         return next(error("All fields are required",400))
     }
 
+    const existingNid=await HealthHub.findOne({nid: req.body.nid})
+    if(existingNid){
+        return res.status(400).json({ error: "NID already exists" });
+    }
+    const existingphanmacyReg=await HealthHub.findOne({phanmacyReg: req.body.phanmacyReg})
+    if(existingphanmacyReg){
+        return res.status(400).json({ error: "phanmacyReg already exists" });
+    }
+
     /**Check Existing User */
         const existingUser=await User.findOne({
             credential,
@@ -131,11 +140,16 @@ app.post('/api/register',upload.fields([{ name: "profile" }, { name: "signature"
         }
         if(user.role==='healthHub'){
             const profileLocalFilePath=req?.files?.profile&&req?.files?.profile[0].path;
+            const signatureLocalFilePath=req?.files?.signature&&req.files.signature[0].path;
             
             const cloudinaryResponseProfile=await uploadOnCloudinary(profileLocalFilePath)
             const profileUrl=cloudinaryResponseProfile?.url
-            await Doctor.create({
+
+            const cloudinaryResponseSignature=await uploadOnCloudinary(signatureLocalFilePath)
+            const signatureUrl=cloudinaryResponseSignature?.url
+            await HealthHub.create({
                 _id:user._id,
+                profile:profileUrl,
                 nid:req.body.nid || '',
                 pharmacyName:req.body.pharmacyName || '',
                 phanmacyReg:req.body.phanmacyReg || '',
@@ -145,7 +159,8 @@ app.post('/api/register',upload.fields([{ name: "profile" }, { name: "signature"
                 upazila:req.body.upazila || '',
                 category:req.body.category || '',
                 description:req.body.description || '',
-                image:profileUrl || '',
+                facilities:req.body.facilities || '',
+                pharmacyImage:signatureUrl || '',
                 payment:{
                     service:req.body.service || '',
                     number:req.body.number || ''
@@ -1173,7 +1188,6 @@ app.post('/api/promoCode',async(req,res,next)=>{
 
     return res.status(200).json({message:"promoCode created successfully",newPromoCode})
 })
-
 app.post('/api/promoCodeValidate',async(req,res,next)=>{
     const {code}=req.body
     const promoCode=await PromoCode.findOne({code})
@@ -1192,7 +1206,18 @@ app.post('/api/promoCodeValidate',async(req,res,next)=>{
     // }
     res.status(200).json({valid:true,percentage:promoCode.percentage})
 })
-
+app.get('/api/promoCodes/:userId',async(req,res,next)=>{
+    const {userId}=req.params
+    try{
+        const promoCode=await PromoCode.findOne({creatorId:userId})
+        if(!promoCode){
+            res.status(400).json({message:'promoCode not found'})
+        }
+        res.status(200).json(promoCode)
+    }catch(e){
+        res.status(400).json({error:e.message})
+    }
+})
 app.get('/api/promoCodes',async(req,res,next)=>{
     try{
         const promoCodes=await PromoCode.find()
@@ -1215,6 +1240,10 @@ app.delete('/api/promoCodes/:id',async(req,res,next)=>{
 })
 app.patch('/api/promoCodes/:id',async(req,res,next)=>{
     const {id}=req.params;
+    const promoCode=await PromoCode.findOne({code:req.body?.code})
+    if(promoCode){
+        res.status(400).json({message:'This code is already used!'})
+    }
     try{
         const updatedData=await PromoCode.findByIdAndUpdate(id,{
             $set:{
@@ -1308,23 +1337,80 @@ app.get('/api/healthHub',async(req,res,next)=>{
         res.status(500).json({ error: error.message });
     }
 })
-app.patch('/api/healthHub/:id',upload.single('image'),async(req,res)=>{
+app.get('/api/healthHub/:id',async(req,res,next)=>{
+    const {id}=req.params
+    try {
+        const healthHub = await HealthHub.findById(id);
+        if (!healthHub) return res.status(404).json({ message: 'Blog not found' });
+        res.status(200).json(healthHub);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+})
+app.patch('/api/healthHub/:id',upload.fields([{ name: "profile" }, { name: "signature" }]),async(req,res)=>{
+    const {
+        nid,
+        pharmacyName,
+        phanmacyReg,
+        country,
+        division,
+        district,
+        upazila,
+        category,
+        description,
+        pharmacyImage,
+        phone,
+        facilities,
+        status,
+        service,
+        number
+    }=req.body
     const {id}=req.params
     const healthHub=await HealthHub.findById(id)
     if(!healthHub){
         res.status(400).json({message:'HealthHub not found'})
     }
-    const localFilePath=req.file?.path
-    const cloudinaryResponse=await uploadOnCloudinary(localFilePath)
-    const imageUrl=cloudinaryResponse?cloudinaryResponse?.url:''
+
+    const existingNid=await HealthHub.findOne({nid: req.body.nid})
+    if(existingNid){
+        return res.status(400).json({ error: "NID already exists" });
+    }
+
+    const existingphanmacyReg=await HealthHub.findOne({phanmacyReg: req.body.phanmacyReg})
+    if(existingphanmacyReg){
+        return res.status(400).json({ error: "phanmacyReg already exists" });
+    }
+    
+    const profileLocalFilePath=req?.files?.profile&&req?.files?.profile[0].path;
+    const signatureLocalFilePath=req?.files?.signature&&req.files.signature[0].path;
+            
+    const cloudinaryResponseProfile=await uploadOnCloudinary(profileLocalFilePath)
+    const profileUrl=cloudinaryResponseProfile?.url
+
+    const cloudinaryResponseSignature=await uploadOnCloudinary(signatureLocalFilePath)
+    const signatureUrl=cloudinaryResponseSignature?.url
     const payload={
-        ...req.body,
-        image:imageUrl || ''
+        nid:nid || null,
+        pharmacyName:pharmacyName || null,
+        phanmacyReg:phanmacyReg || null,
+        country:country || null,
+        division:division || null,
+        district:district || null,
+        upazila:upazila || null,
+        category:category || null,
+        description:description || null,
+        pharmacyImage:pharmacyImage || null,
+        phone:phone || null,
+        status:status || null,
+        facilities:facilities || null,
+        profile:profileUrl || null,
+        pharmacyImage:signatureUrl || null
     }
     Object.keys(payload).forEach((key)=>{
         healthHub[key]=payload[key] ?? healthHub[key]
     })
-
+    healthHub.payment.service=service || healthHub.payment.service
+    healthHub.payment.number=number || healthHub.payment.number
     await healthHub.save()
     res.status(200).json({message:'updated successfully'})
 })

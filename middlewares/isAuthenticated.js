@@ -2,7 +2,6 @@ const User = require("../models/User");
 const error = require("../utils/error")
 const jwt = require('jsonwebtoken');
 const isAuthenticated=async(req,_res,next)=>{
-    console.log(req.headers.authorization)
     try {
 		let token = req.headers.authorization;
 		if (!token) {
