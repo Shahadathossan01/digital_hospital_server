@@ -1,4 +1,4 @@
-const mongoose=require('mongoose')
+const mongoose=require('mongoose');
 const {Schema,model}=mongoose;
 
 const appointmentSchema=new Schema({
@@ -34,6 +34,11 @@ const appointmentSchema=new Schema({
     prescription:{
         type:Schema.Types.ObjectId,
         ref:'Prescription'
+    },
+    referenceHealhtHubID:{
+        type: Schema.Types.ObjectId,
+        ref:'HealthHub',
+        default: ''
     },
     transactionId:String,
     totalFee:Number

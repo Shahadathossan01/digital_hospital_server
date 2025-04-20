@@ -961,10 +961,12 @@ app.use((err,req,res,next)=>{
 /**SSL Commerz */
 
 app.post('/api/initApplyForPayment', async(req, res) => {
-    const {patientID,doctorID,scheduleID,slotID,timeValue,dateValue,age,dateOfBirth,fullName,gender,height,totalFee,weight}=req.body
-    if(!patientID || !doctorID || !scheduleID || !slotID || !timeValue || !dateValue || !age || !dateOfBirth || !fullName || !gender || !height || !totalFee || !weight){
+    const {patientID,doctorID,scheduleID,slotID,timeValue,dateValue,age,dateOfBirth,fullName,gender,height,totalFee,weight,referenceHealhtHubID}=req.body
+    if(!doctorID || !scheduleID || !slotID || !timeValue || !dateValue || !age || !dateOfBirth || !fullName || !gender || !height || !totalFee || !weight){
        return res.status(400).json({message:'Invalid Data! All Filled must be required.'})
     }
+    let applyAppointmentID=null;
+    let appointmentID=null;
     const transactionId =uuidv4()
     const data = {
         total_amount: totalFee,
@@ -1002,8 +1004,7 @@ app.post('/api/initApplyForPayment', async(req, res) => {
         let GatewayPageURL = apiResponse.GatewayPageURL
         res.status(200).json(GatewayPageURL)
     });
-    let applyAppointmentID=null;
-    let appointmentID=null;
+    
     const appointment= await Appointment.create({
         date:dateValue,
         time:timeValue,
@@ -1019,7 +1020,8 @@ app.post('/api/initApplyForPayment', async(req, res) => {
         patient:patientID,
         doctor:doctorID,
         transactionId:transactionId,
-        totalFee:totalFee
+        totalFee:totalFee,
+        referenceHealhtHubID
     })
 
     appointmentID=appointment._id
@@ -1044,9 +1046,17 @@ app.post('/api/initApplyForPayment', async(req, res) => {
         $push:{applyForAppointments:applyAppointmentID}
     },)
 
-    await Patient.findByIdAndUpdate(patientID,{
-        $push:{appointments:appointmentID}
-    })
+    if(patientID){
+        await Patient.findByIdAndUpdate(patientID,{
+            $push:{appointments:appointmentID}
+        })
+    }
+    if(referenceHealhtHubID){
+        await HealthHub.findByIdAndUpdate(referenceHealhtHubID,{
+            $push:{appointments:appointmentID}
+        })
+    }
+
 
     app.post('/payment/success',async(req,res)=>{
         const { applyAppointmentID, doctorID, scheduleID, slotID, transactionId } = req.query;
@@ -1143,9 +1153,17 @@ app.post('/api/freeAppointments',async(req,res,next)=>{
         $push:{applyForAppointments:applyAppointmentID}
     },)
 
-    await Patient.findByIdAndUpdate(patientID,{
-        $push:{appointments:appointmentID}
-    })
+    if(patientID){
+        await Patient.findByIdAndUpdate(patientID,{
+            $push:{appointments:appointmentID}
+        })
+    }
+    if(referenceHealhtHubID){
+        await HealthHub.findByIdAndUpdate(referenceHealhtHubID,{
+            $push:{appointments:appointmentID}
+        })
+    }
+
     await Doctor.updateOne(
         { 
           _id: doctorID, 
@@ -1189,13 +1207,21 @@ app.post('/api/promoCode',async(req,res,next)=>{
     return res.status(200).json({message:"promoCode created successfully",newPromoCode})
 })
 app.post('/api/promoCodeValidate',async(req,res,next)=>{
-    const {code}=req.body
-    const promoCode=await PromoCode.findOne({code})
-
+    const {code,userId}=req.body
+    const user=await User.findById({_id:userId})
+    const promoCode=await PromoCode.findOne({code}).populate('creatorId')
     if(!promoCode){
         return res.status(400).json({valid:false,message:"Invalid promo code"})
     }
 
+    if(user?.role==='patient'){
+        res.status(200).json({valid:'patient',percent:promoCode.percentage,author:promoCode?.creatorId})
+    }
+    if(user?.role==='healthHub'){
+        res.status(200).json({valid:'notValid',percent:0,author:promoCode?.creatorId})
+    }
+
+    
     // const now=new Date()
     // if(now>promoCode.expiryDate){
     //     return res.status(400).json({valid:false,message:"Promo Code expired"})
@@ -1204,7 +1230,6 @@ app.post('/api/promoCodeValidate',async(req,res,next)=>{
     // if(promoCode.users.length >promoCode.usageLimit){
     //     return res.status(400).json({valid:false,message:"Promo code user is over"})
     // }
-    res.status(200).json({valid:true,percentage:promoCode.percentage})
 })
 app.get('/api/promoCodes/:userId',async(req,res,next)=>{
     const {userId}=req.params

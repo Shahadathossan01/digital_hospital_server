@@ -56,10 +56,12 @@ const healthHubSchema= new Schema({
       facilities: {
         type: String,
       },
-      
-
-
-
+      appointments:[
+        {
+            type:Schema.Types.ObjectId,
+            ref:'Appointment'
+        }
+    ]
 },{timestamps:true})
 
 const HealthHub=mongoose.model('HealthHub',healthHubSchema)
