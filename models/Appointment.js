@@ -37,8 +37,7 @@ const appointmentSchema=new Schema({
     },
     referenceHealhtHubID:{
         type: Schema.Types.ObjectId,
-        ref:'HealthHub',
-        default: ''
+        ref:'HealthHub'
     },
     transactionId:String,
     totalFee:Number

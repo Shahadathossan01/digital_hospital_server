@@ -605,7 +605,6 @@ app.patch('/api/doctorScheduleSlotStatus',async(req,res)=>{
         res.status(200).json({message:'No slot found or already updated'})
       }
 })
-
 app.patch('/api/doctorScheduleStatus',async(req,res)=>{
     const {doctorID,scheduleID,status}=req.body
     const result = await Doctor.updateOne(
@@ -952,22 +951,55 @@ app.get('/api/medicalRecord',async(req,res)=>{
     })
     res.status(200).json(medicalRecord)
 })
-app.use((err,req,res,next)=>{
-    const message=err.message?err.message:'Server Error Occurred';
-    const status=err.status?err.status:500
-    res.status(status).json({message})
-})
 
 /**SSL Commerz */
 
-app.post('/api/initApplyForPayment', async(req, res) => {
-    const {patientID,doctorID,scheduleID,slotID,timeValue,dateValue,age,dateOfBirth,fullName,gender,height,totalFee,weight,referenceHealhtHubID}=req.body
+app.post('/api/initApplyForPayment',isAuthenticated,async(req, res) => {
+    const {patientID='',doctorID,scheduleID,slotID,timeValue,dateValue,age,dateOfBirth,fullName,gender,height,totalFee,weight,referenceHealhtHubID=''}=req.body
     if(!doctorID || !scheduleID || !slotID || !timeValue || !dateValue || !age || !dateOfBirth || !fullName || !gender || !height || !totalFee || !weight){
        return res.status(400).json({message:'Invalid Data! All Filled must be required.'})
     }
     let applyAppointmentID=null;
     let appointmentID=null;
     const transactionId =uuidv4()
+    const appointment= await Appointment.create({
+        date:dateValue,
+        time:timeValue,
+        googleMeetLink:"",
+        patientDetails:{
+            fullName,
+            dateOfBirth,
+            age,
+            gender,
+            height,
+            weight
+        },
+        patient:patientID ??undefined,
+        doctor:doctorID,
+        transactionId:transactionId,
+        totalFee:totalFee,
+        referenceHealhtHubID:referenceHealhtHubID??undefined
+    })
+
+    appointmentID=appointment._id
+    const applyForAppointment=await ApplyForAppointment.create({
+        date:dateValue,
+        time:timeValue,
+        doctorID,
+        appointmentID:appointmentID,
+        patientDetails:{
+            fullName,
+            dateOfBirth,
+            age,
+            gender,
+            height,
+            weight
+        },
+        status:'Unpayed'
+    })
+    applyAppointmentID=applyForAppointment._id
+    
+
     const data = {
         total_amount: totalFee,
         currency: 'BDT',
@@ -1005,43 +1037,6 @@ app.post('/api/initApplyForPayment', async(req, res) => {
         res.status(200).json(GatewayPageURL)
     });
     
-    const appointment= await Appointment.create({
-        date:dateValue,
-        time:timeValue,
-        googleMeetLink:"",
-        patientDetails:{
-            fullName,
-            dateOfBirth,
-            age,
-            gender,
-            height,
-            weight
-        },
-        patient:patientID,
-        doctor:doctorID,
-        transactionId:transactionId,
-        totalFee:totalFee,
-        referenceHealhtHubID
-    })
-
-    appointmentID=appointment._id
-    const applyForAppointment=await ApplyForAppointment.create({
-        date:dateValue,
-        time:timeValue,
-        doctorID,
-        appointmentID:appointmentID,
-        patientDetails:{
-            fullName,
-            dateOfBirth,
-            age,
-            gender,
-            height,
-            weight
-        },
-        status:'Unpayed'
-    })
-
-    applyAppointmentID=applyForAppointment._id
     await Doctor.findByIdAndUpdate(doctorID,{
         $push:{applyForAppointments:applyAppointmentID}
     },)
@@ -1051,7 +1046,7 @@ app.post('/api/initApplyForPayment', async(req, res) => {
             $push:{appointments:appointmentID}
         })
     }
-    if(referenceHealhtHubID){
+    if(referenceHealhtHubID && req?.user?.role=='healthHub'){
         await HealthHub.findByIdAndUpdate(referenceHealhtHubID,{
             $push:{appointments:appointmentID}
         })
@@ -1215,7 +1210,13 @@ app.post('/api/promoCodeValidate',async(req,res,next)=>{
     }
 
     if(user?.role==='patient'){
-        res.status(200).json({valid:'patient',percent:promoCode.percentage,author:promoCode?.creatorId})
+        console.log(promoCode)
+        const response={
+            valid:'patient',
+            percent:promoCode.percentage,
+            author:promoCode?.creatorId
+        }
+        res.status(200).json(response)
     }
     if(user?.role==='healthHub'){
         res.status(200).json({valid:'notValid',percent:0,author:promoCode?.creatorId})
@@ -1438,6 +1439,12 @@ app.patch('/api/healthHub/:id',upload.fields([{ name: "profile" }, { name: "sign
     healthHub.payment.number=number || healthHub.payment.number
     await healthHub.save()
     res.status(200).json({message:'updated successfully'})
+})
+
+app.use((err,req,res,next)=>{
+    const message=err.message?err.message:'Server Error Occurred';
+    const status=err.status?err.status:500
+    res.status(status).json({message})
 })
 
 removeUnverifiedAccounts()
