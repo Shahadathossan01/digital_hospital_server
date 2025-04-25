@@ -39,6 +39,10 @@ const appointmentSchema=new Schema({
         type: Schema.Types.ObjectId,
         ref:'HealthHub'
     },
+    referredPayment: {
+        type: Boolean,
+        default: false
+      },
     transactionId:String,
     totalFee:Number
 },{ timestamps: true })

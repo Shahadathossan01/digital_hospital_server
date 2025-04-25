@@ -388,10 +388,10 @@ app.get('/api/users',async(req,res,next)=>{
 app.delete('/api/users/:id',async(req,res)=>{
     const {id}=req.params
     const deleteUser=await User.findByIdAndDelete(id)
-    deleteUser.role==='patient' && await Patient.findByIdAndDelete(id)
-    deleteUser.role==='doctor' && await Doctor.findByIdAndDelete(id)
+    deleteUser?.role==='patient' && await Patient.findByIdAndDelete(id)
+    deleteUser?.role==='doctor' && await Doctor.findByIdAndDelete(id)
     // deleteUser.role==='admin' && await Admin.findByIdAndDelete(id)
-    if(deleteUser.role==='healthHub'){
+    if(deleteUser?.role==='healthHub'){
         await HealthHub.findByIdAndDelete(id)
         await PromoCode.deleteMany({ creatorId:id });
     }
@@ -497,7 +497,7 @@ app.get('/api/doctors/:id',async(req,res)=>{
     const doctor=await Doctor.findById(id).populate('applyForAppointments').populate({
         path: 'appointments',
         populate: [
-            { path: 'testRecommendation' },
+            {path: 'testRecommendation'},
             {path:'patient'},
             {path:'doctor'},
             {path:'prescription',
@@ -704,7 +704,7 @@ app.post('/api/appointment',async(req,res)=>{
     }
 })
 app.get('/api/appointments',async(req,res)=>{
-    const appointment=await Appointment.find().populate('patient').populate('doctor').populate('testRecommendation').populate({
+    const appointment=await Appointment.find().sort('-createdAt').populate('patient').populate('doctor').populate('testRecommendation').populate({
         path: 'prescription',
         populate: {
             path: 'medicinInstructions', 
@@ -761,6 +761,16 @@ app.patch('/api/appointments/status/:id',async(req,res)=>{
         }
     },{new:true})
     res.status(200).json({success:true,message:"updated status"})
+})
+app.patch('/api/appointments/referredPayment/:id',async(req,res)=>{
+    const {id}=req.params
+    const {referredPayment}=req.body
+     await Appointment.findByIdAndUpdate(id,{
+        $set: {
+            referredPayment
+        }
+    },{new:true})
+    res.status(200).json({success:true,message:"updated referredPayment"})
 })
 
 
@@ -1366,7 +1376,17 @@ app.get('/api/healthHub',async(req,res,next)=>{
 app.get('/api/healthHub/:id',async(req,res,next)=>{
     const {id}=req.params
     try {
-        const healthHub = await HealthHub.findById(id);
+        const healthHub = await HealthHub.findById(id).populate({
+            path: 'appointments',
+            populate: [
+                {path: 'testRecommendation'},
+                {path:'patient'},
+                {path:'doctor'},
+                {path:'prescription',
+                    populate:'medicinInstructions'
+                }
+            ]
+        });
         if (!healthHub) return res.status(404).json({ message: 'Blog not found' });
         res.status(200).json(healthHub);
     } catch (error) {
@@ -1440,6 +1460,37 @@ app.patch('/api/healthHub/:id',upload.fields([{ name: "profile" }, { name: "sign
     await healthHub.save()
     res.status(200).json({message:'updated successfully'})
 })
+app.get('/api/healthHub/:id/refAppointments',async(req,res,next)=>{
+    const {id}=req.params
+    try{
+        const healthHub=await HealthHub.findOne({_id:id})
+        const healthHubAppointments=healthHub?.appointments || []
+        const allAppointments=await Appointment.find().sort('-createdAt').populate('patient').populate('doctor')
+        
+        const refAppointments = allAppointments.reduce((acc, appointment) => {
+            const isIncluded = healthHubAppointments.some(hid => hid.equals(appointment._id));
+            if (!isIncluded) {
+              acc.push(appointment);
+            }
+            return acc;
+          }, []);
+
+          res.status(200).json(refAppointments)
+
+    }catch(e){
+        next(e)
+    }
+})
+app.get('/api/allRefAppointments', async (req, res) => {
+    try {
+      const appointments = await Appointment.find({ referenceHealhtHubID: { $exists: true, $ne: null } }).sort('-createdAt').populate('patient').populate('doctor');
+  
+      res.status(200).json(appointments);
+    } catch (error) {
+      console.error('Error fetching reference appointments:', error);
+      res.status(500).json({ message: 'Server error' });
+    }
+  });
 
 app.use((err,req,res,next)=>{
     const message=err.message?err.message:'Server Error Occurred';
