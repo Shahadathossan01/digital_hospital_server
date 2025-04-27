@@ -159,7 +159,7 @@ app.post('/api/register',upload.fields([{ name: "profile" }, { name: "signature"
                 upazila:req.body.upazila || '',
                 category:req.body.category || '',
                 description:req.body.description || '',
-                facilities:req.body.facilities || '',
+                facilities:req.body.facilities || [],
                 pharmacyImage:signatureUrl || '',
                 payment:{
                     service:req.body.service || '',
@@ -383,7 +383,24 @@ app.get('/api/users',async(req,res,next)=>{
     const users=await User.find({
         accountVerified:true
     })
-    res.status(200).json(users)
+
+    const allUsers = await users.reduce(async (accPromise, cur) => {
+        const acc = await accPromise;
+        if(cur.role==='patient' || cur.role==='admin'){
+            acc.push(cur)
+        }
+        if(cur.role==='healthHub'){
+            acc.push(cur)
+        }
+        if (cur.role === 'doctor') {
+            const findDoctor = await Doctor.findById(cur._id); // ✅ No ObjectId needed
+            if (findDoctor?.isValid) {
+                acc.push(cur);
+            }
+        }
+        return acc;
+    }, Promise.resolve([]));
+    res.status(200).json(allUsers)
 })
 app.delete('/api/users/:id',async(req,res)=>{
     const {id}=req.params
@@ -393,7 +410,7 @@ app.delete('/api/users/:id',async(req,res)=>{
     // deleteUser.role==='admin' && await Admin.findByIdAndDelete(id)
     if(deleteUser?.role==='healthHub'){
         await HealthHub.findByIdAndDelete(id)
-        await PromoCode.deleteMany({ creatorId:id });
+        await PromoCode.deleteOne({ creatorId:id });
     }
     res.status(200).json({message:'User Deleted Successfully'})
 })
@@ -1448,7 +1465,7 @@ app.patch('/api/healthHub/:id',upload.fields([{ name: "profile" }, { name: "sign
         pharmacyImage:pharmacyImage || null,
         phone:phone || null,
         status:status || null,
-        facilities:facilities || null,
+        facilities:facilities || [],
         profile:profileUrl || null,
         pharmacyImage:signatureUrl || null
     }
@@ -1460,27 +1477,40 @@ app.patch('/api/healthHub/:id',upload.fields([{ name: "profile" }, { name: "sign
     await healthHub.save()
     res.status(200).json({message:'updated successfully'})
 })
-app.get('/api/healthHub/:id/refAppointments',async(req,res,next)=>{
-    const {id}=req.params
-    try{
-        const healthHub=await HealthHub.findOne({_id:id})
-        const healthHubAppointments=healthHub?.appointments || []
-        const allAppointments=await Appointment.find().sort('-createdAt').populate('patient').populate('doctor')
-        
-        const refAppointments = allAppointments.reduce((acc, appointment) => {
-            const isIncluded = healthHubAppointments.some(hid => hid.equals(appointment._id));
-            if (!isIncluded) {
-              acc.push(appointment);
-            }
-            return acc;
-          }, []);
+app.get('/api/healthHub/:id/refAppointments', async (req, res, next) => {
+    const { id } = req.params;
+    try {
+      const healthHub = await HealthHub.findOne({ _id: id });
+      const healthHubAppointments = healthHub?.appointments || [];;
+  
+      const allAppointments = await Appointment.find()
+        .sort('-createdAt')
+        .populate('patient')
+        .populate('doctor');
 
-          res.status(200).json(refAppointments)
+      const updatedAppointments = allAppointments.filter(appointment => {
+        // This checks if the appointment ID is not in healthHubAppointments
+        return !healthHubAppointments.some(healthHubAppointmentId =>
+          healthHubAppointmentId.equals(appointment._id)
+        );
+      });
+  
 
-    }catch(e){
-        next(e)
+      const refAppointment = updatedAppointments.reduce((acc, cur) => {
+        if (cur.referenceHealhtHubID == id) {
+          acc.push(cur);
+        }
+        return acc;
+      }, []);
+  
+      
+      res.status(200).json(refAppointment);
+  
+    } catch (e) {
+      next(e);
     }
-})
+  });
+  
 app.get('/api/allRefAppointments', async (req, res) => {
     try {
       const appointments = await Appointment.find({ referenceHealhtHubID: { $exists: true, $ne: null } }).sort('-createdAt').populate('patient').populate('doctor');

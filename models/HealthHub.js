@@ -32,6 +32,7 @@ const healthHubSchema= new Schema({
       },
       description: {
         type: String,
+        default:''
       },
       pharmacyImage: {
         type: String,
@@ -53,8 +54,9 @@ const healthHubSchema= new Schema({
         enum: ['pending', 'approved', 'disabled', 'suspended'],
         default: 'pending',
       },
-      facilities: {
+      facilities:{
         type: String,
+        default:''
       },
       appointments:[
         {
