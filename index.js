@@ -1404,7 +1404,7 @@ app.get('/api/healthHub/:id',async(req,res,next)=>{
                 }
             ]
         });
-        if (!healthHub) return res.status(404).json({ message: 'Blog not found' });
+        if (!healthHub) return res.status(404).json({ message: 'Health hub not found' });
         res.status(200).json(healthHub);
     } catch (error) {
         res.status(500).json({ error: error.message });
