@@ -982,13 +982,17 @@ app.get('/api/medicalRecord',async(req,res)=>{
 /**SSL Commerz */
 
 app.post('/api/initApplyForPayment',isAuthenticated,async(req, res) => {
+
     const {patientID='',doctorID,scheduleID,slotID,timeValue,dateValue,age,dateOfBirth,fullName,gender,height,totalFee,weight,referenceHealhtHubID=''}=req.body
+
     if(!doctorID || !scheduleID || !slotID || !timeValue || !dateValue || !age || !dateOfBirth || !fullName || !gender || !height || !totalFee || !weight){
        return res.status(400).json({message:'Invalid Data! All Filled must be required.'})
     }
+
     let applyAppointmentID=null;
     let appointmentID=null;
     const transactionId =uuidv4()
+
     const appointment= await Appointment.create({
         date:dateValue,
         time:timeValue,
@@ -1082,7 +1086,7 @@ app.post('/api/initApplyForPayment',isAuthenticated,async(req, res) => {
 
     app.post('/payment/success',async(req,res)=>{
         const { applyAppointmentID, doctorID, scheduleID, slotID, transactionId } = req.query;
-        console.log(applyAppointmentID,doctorID,scheduleID,slotID,transactionId)
+        
         await ApplyForAppointment.findByIdAndUpdate(applyAppointmentID,{
             $set:{status:'Payed'}
         },{new:true})
@@ -1128,50 +1132,58 @@ app.post('/api/initApplyForPayment',isAuthenticated,async(req, res) => {
 })
 
 app.post('/api/freeAppointments',async(req,res,next)=>{
-    const {patientID,doctorID,scheduleID,slotID,timeValue,dateValue,age,dateOfBirth,fullName,gender,height,totalFee,weight}=req.body
-    console.log(req.body)
-    if(!patientID || !doctorID || !scheduleID || !slotID || !timeValue || !dateValue || !age || !dateOfBirth || !fullName || !gender || !height || !weight){
+
+    const {patientID='',doctorID,scheduleID,slotID,timeValue,dateValue,age,dateOfBirth,fullName,gender,height,totalFee,weight,referenceHealhtHubID=''}=req.body
+
+    if(!doctorID || !scheduleID || !slotID || !timeValue || !dateValue || !age || !dateOfBirth || !fullName || !gender || !height || !weight){
+
        return res.status(400).json({message:'Invalid Data! All Filled must be required.'})
     }
+
     try{
         let applyAppointmentID=null;
         let appointmentID=null;
-    const appointment= await Appointment.create({
-        date:dateValue,
-        time:timeValue,
-        googleMeetLink:"",
-        patientDetails:{
-            fullName,
-            dateOfBirth,
-            age,
-            gender,
-            height,
-            weight
-        },
-        patient:patientID,
-        doctor:doctorID,
-        totalFee:totalFee
-    })
+        const transactionId =uuidv4()
 
-    appointmentID=appointment._id
-    const applyForAppointment=await ApplyForAppointment.create({
-        date:dateValue,
-        time:timeValue,
-        doctorID,
-        appointmentID:appointmentID,
-        patientDetails:{
-            fullName,
-            dateOfBirth,
-            age,
-            gender,
-            height,
-            weight
-        },
-        status:'Free'
-    })
+        const appointment= await Appointment.create({
+            date:dateValue,
+            time:timeValue,
+            googleMeetLink:"",
+            patientDetails:{
+                fullName,
+                dateOfBirth,
+                age,
+                gender,
+                height,
+                weight
+            },
+            patient:patientID ??undefined,
+            doctor:doctorID,
+            transactionId:transactionId,
+            totalFee:totalFee,
+            referenceHealhtHubID:referenceHealhtHubID??undefined
+        })
 
-    applyAppointmentID=applyForAppointment._id
-    await Doctor.findByIdAndUpdate(doctorID,{
+        appointmentID=appointment._id
+        const applyForAppointment=await ApplyForAppointment.create({
+            date:dateValue,
+            time:timeValue,
+            doctorID,
+            appointmentID:appointmentID,
+            patientDetails:{
+                fullName,
+                dateOfBirth,
+                age,
+                gender,
+                height,
+                weight
+            },
+            status:'free'
+        })
+        applyAppointmentID=applyForAppointment._id
+
+    
+   await Doctor.findByIdAndUpdate(doctorID,{
         $push:{applyForAppointments:applyAppointmentID}
     },)
 
@@ -1180,7 +1192,7 @@ app.post('/api/freeAppointments',async(req,res,next)=>{
             $push:{appointments:appointmentID}
         })
     }
-    if(referenceHealhtHubID){
+    if(referenceHealhtHubID && req?.user?.role=='healthHub'){
         await HealthHub.findByIdAndUpdate(referenceHealhtHubID,{
             $push:{appointments:appointmentID}
         })
