@@ -36,7 +36,7 @@ const Blog = require('./models/Blog')
 const HealthHub = require('./models/HealthHub')
 const client = require('twilio')(process.env.TWILIO_SID, process.env.TWILIO_AUTH_TOKEN);
 
-const port=process.env.PORT || 3000
+const port=process.env.PORT || 5000
 const storeId = process.env.STORE_ID;
 const storePassword = process.env.STORE_PASSWORD;
 const databaseUrl=process.env.DATABASE_URL
@@ -47,208 +47,223 @@ app.get('/health',(req,res)=>{
 })
 
 /**Authentication */
-app.post('/api/register',upload.fields([{ name: "profile" }, { name: "signature" }]),async(req,res,next)=>{
-    try{
-    const {username,credential,password}=req.body
-    const updateRole=req.body.role?req.body.role:'patient'
-    if(!username || !credential || !password){
-        return next(error("All fields are required",400))
-    }
 
-    const existingNid=await HealthHub.findOne({nid: req.body.nid})
-    if(existingNid){
-        return res.status(400).json({ error: "NID already exists" });
-    }
-    const existingphanmacyReg=await HealthHub.findOne({phanmacyReg: req.body.phanmacyReg})
-    if(existingphanmacyReg){
-        return res.status(400).json({ error: "phanmacyReg already exists" });
-    }
-
-    /**Check Existing User */
-        const existingUser=await User.findOne({
-            credential,
-            accountVerified:true
-        })
-        if(existingUser){
-            return next(error("Credential Already used",400))
-        }
-    /**Check Register Action Attempts By User */
-        const registerActionAttemptsByUser=await User.find({
-            credential,
-            accountVerified:false
-        })
-        if(registerActionAttemptsByUser.length >3){
-            return next(error("You have rong attempts 3 times. Please try again after 1 hour.",400))
-        }
-
-        /**Create User */
-        const userData={
-            username,
-            credential,
-            password,
-            role:updateRole,
-            rowPass:password
-        }
-        const user=await User.create(userData)
-
-        /** Create verification code */
-        const verificationCode = await user.generateVerificationCode();
-        await user.save();
-        sendVerificationCode(
-            verificationCode,
-            username,
-            credential,
-            res
-        )
-        user.role==='patient' && await Patient.create({
-            _id:user._id,
-            image:''
-        })
-        if(user.role==='doctor'){
-            const profileLocalFilePath=req?.files?.profile&&req?.files?.profile[0].path;
-            const signatureLocalFilePath=req?.files?.signature&&req.files.signature[0].path;
-            
-            const cloudinaryResponseProfile=await uploadOnCloudinary(profileLocalFilePath)
-            const profileUrl=cloudinaryResponseProfile?.url
-
-            const cloudinaryResponseSignature=await uploadOnCloudinary(signatureLocalFilePath)
-            const signatureUrl=cloudinaryResponseSignature?.url
-            const scheduleData = JSON.parse(req.body.schedule);
-            await Doctor.create({
-                _id:user._id,
-                firstName:req.body.firstName,
-                lastName:req.body.lastName,
-                dateOfBirth:req.body.dateOfBirth,
-                mobile:req.body.mobile,
-                nidOrPassport:req.body.nidOrPassport,
-                nationality:req.body.nationality,
-                gender:req.body.gender,
-                fee:req.body.fee,
-                organization:req.body.organization,
-                biography:req.body.biography,
-                title:req.body.title,
-                bmdcNumber:req.body.bmdcNumber,
-                bmdcExpiryDate:req.body.bmdcExpiryDate,
-                degrees:req.body.degrees,
-                speciality:req.body.speciality,
-                yearOfExperience:req.body.yearOfExperience,
-                profile:profileUrl,
-                designation:req.body.designation,
-                signature:signatureUrl,
-                schedule:scheduleData
-            })
-        }
-        if(user.role==='healthHub'){
-            const profileLocalFilePath=req?.files?.profile&&req?.files?.profile[0].path;
-            const signatureLocalFilePath=req?.files?.signature&&req.files.signature[0].path;
-            
-            const cloudinaryResponseProfile=await uploadOnCloudinary(profileLocalFilePath)
-            const profileUrl=cloudinaryResponseProfile?.url
-
-            const cloudinaryResponseSignature=await uploadOnCloudinary(signatureLocalFilePath)
-            const signatureUrl=cloudinaryResponseSignature?.url
-            await HealthHub.create({
-                _id:user._id,
-                profile:profileUrl,
-                nid:req.body.nid || '',
-                pharmacyName:req.body.pharmacyName || '',
-                phanmacyReg:req.body.phanmacyReg || '',
-                country:req.body.country || '',
-                division:req.body.division || '',
-                district:req.body.district || '',
-                upazila:req.body.upazila || '',
-                category:req.body.category || '',
-                description:req.body.description || '',
-                facilities:req.body.facilities || [],
-                pharmacyImage:signatureUrl || '',
-                payment:{
-                    service:req.body.service || '',
-                    number:req.body.number || ''
-                },
-                phone:req.body.phone || '',
-                status:req.body.status || 'pending'
-            })
-            await PromoCode.create({
-                creatorId:user._id,
-                code:req.body.phanmacyReg,
-                percentage: 10,
-                expiryDate: ''
-            })
-        }
-    }catch(error){
-        next(error)
-    }
-
-    /**send verification code  */
-    async function sendVerificationCode(verificationCode,username,credential,res){
-        const checkCredential=isEmailOrPhone(credential)
-        if(checkCredential=="email"){
-            const message=generateEmailTemplate(verificationCode)
-            sendEmail({credential,subject:"Your Verification Code From Sureline",message})
-            res.status(200).json({
-                success:true,
-                message:`Verification email successfully send to ${credential}`
-            })
-        }else if(checkCredential=="phone"){
-            try{
-                const phone="+88"+credential
-            console.log(phone)
-            const verificationCodeWithSpace=verificationCode
-            .toString()
-            .split("")
-            .join(" ");
-            console.log(verificationCodeWithSpace)
-           const call= await client.messages.create({
-                body:`Your OTP is ${verificationCodeWithSpace}`,
-                from:process.env.TWILIO_PHONE_NUMBER,
-                to:process.env.PHONE
-            })
-            console.log(call)
-            res.status(200).json({
-                success: true,
-                message: `OTP sent.`,
-              });
-            }catch(e){
-                next(e)
-            }
-            } else {
-              return res.status(500).json({
-                success: false,
-                message: "Invalid verification method.",
-              });
-        }
-    }
-
-    /**generate email templete */
-    function generateEmailTemplate(verificationCode) {
-        return `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
-            <h2 style="color: #4CAF50; text-align: center;">Verification Code</h2>
-            <p style="font-size: 16px; color: #333;">Dear User,</p>
-            <p style="font-size: 16px; color: #333;">Your verification code is:</p>
-            <div style="text-align: center; margin: 20px 0;">
-              <span style="display: inline-block; font-size: 24px; font-weight: bold; color: #4CAF50; padding: 10px 20px; border: 1px solid #4CAF50; border-radius: 5px; background-color: #e8f5e9;">
-                ${verificationCode}
-              </span>
-            </div>
-            <p style="font-size: 16px; color: #333;">Please use this code to verify your email address. The code will expire in 10 minutes.</p>
-            <p style="font-size: 16px; color: #333;">If you did not request this, please ignore this email.</p>
-            <footer style="margin-top: 20px; text-align: center; font-size: 14px; color: #999;">
-              <p>Thank you,<br>Your Company Team</p>
-              <p style="font-size: 12px; color: #aaa;">This is an automated message. Please do not reply to this email.</p>
-            </footer>
-          </div>
-        `;
+app.post(
+  '/api/register',
+  upload.fields([{ name: "profile" }, { name: "signature" }]),
+  async (req, res, next) => {
+    try {
+      const { username, credential, password, role = "patient" } = req.body;
+      if (!username || !credential || !password) {
+        return next(error("All fields are required", 400));
       }
-})
+
+      if (role === "healthHub") {
+
+          const existingPharmacyReg = await HealthHub.findOne({ phanmacyReg: req.body.phanmacyReg });
+          if (existingPharmacyReg) {
+            return res.status(400).json({ field:'pharmacyReg',message: "Pharmacy Registration already exists" });
+          }
+
+        const existingNid = await HealthHub.findOne({ nid: req.body.nid });
+        if (existingNid) {
+          return res.status(400).json({ field:'nid',message: "NID already exists" });
+        }
+
+      }
+
+      const existingUser = await User.findOne({ credential, accountVerified: true });
+      if (existingUser) {
+        return res.status(400).json({ field: "credential", message: "Email already in use!" });
+      }
+
+      const unverifiedAttempts = await User.find({ credential, accountVerified: false });
+      if (unverifiedAttempts.length > 3) {
+        return res.status(400).json({ message: "Too many attempts. Try again after 1 hour." });
+      }
+
+      const user = await User.create({
+        username,
+        credential,
+        password,
+        role,
+        rowPass: password
+      });
+
+      const verificationCode = await user.generateVerificationCode();
+      await user.save();
+      res.status(200).json({ success: true, message: "Registration received. Please check your email for verification CODE." });
+      setImmediate(async () => {
+        // Send email or SMS
+        await sendVerificationCode(verificationCode, username, credential, res);
+        
+        await handleRoleSpecificTasks(user, req);
+        // Upload to Cloudinary
+        });
+
+      async function handleRoleSpecificTasks(user, req) {
+        const { role } = user;
+
+
+        if (role === "patient") {
+            return await Patient.create({ _id: user._id, image: '' });
+        }
+
+        if (role === "doctor") {
+            const profilePath = req?.files?.profile?.[0]?.path;
+            const signaturePath = req?.files?.signature?.[0]?.path;
+
+            let profileUrl = '';
+            let signatureUrl = '';
+
+            if (profilePath || signaturePath) {
+            const [profileUpload, signatureUpload] = await Promise.all([
+                profilePath ? uploadOnCloudinary(profilePath) : Promise.resolve({ url: '' }),
+                signaturePath ? uploadOnCloudinary(signaturePath) : Promise.resolve({ url: '' }),
+            ]);
+
+            profileUrl = profileUpload?.url || '';
+            signatureUrl = signatureUpload?.url || '';
+            }
+
+            const scheduleData = JSON.parse(req.body.schedule || "[]");
+            return await Doctor.create({
+            _id: user._id,
+            firstName: req.body.firstName,
+            lastName: req.body.lastName,
+            dateOfBirth: req.body.dateOfBirth,
+            mobile: req.body.mobile,
+            nidOrPassport: req.body.nidOrPassport,
+            nationality: req.body.nationality,
+            gender: req.body.gender,
+            fee: req.body.fee,
+            organization: req.body.organization,
+            biography: req.body.biography,
+            title: req.body.title,
+            bmdcNumber: req.body.bmdcNumber,
+            bmdcExpiryDate: req.body.bmdcExpiryDate,
+            degrees: req.body.degrees,
+            speciality: req.body.speciality,
+            yearOfExperience: req.body.yearOfExperience,
+            profile: profileUrl,
+            designation: req.body.designation,
+            signature: signatureUrl,
+            schedule: scheduleData
+            });
+        }
+
+        if (role === "healthHub") {
+            const profilePath = req?.files?.profile?.[0]?.path;
+            const signaturePath = req?.files?.signature?.[0]?.path;
+
+            let profileUrl = '';
+            let signatureUrl = '';
+
+            if (profilePath || signaturePath) {
+            const [profileUpload, signatureUpload] = await Promise.all([
+                profilePath ? uploadOnCloudinary(profilePath) : Promise.resolve({ url: '' }),
+                signaturePath ? uploadOnCloudinary(signaturePath) : Promise.resolve({ url: '' }),
+            ]);
+
+            profileUrl = profileUpload?.url || '';
+            signatureUrl = signatureUpload?.url || '';
+            }
+
+            console.log(req.body)
+            console.log(typeof(req.body.nid))
+            console.log(profileUrl,signatureUrl)
+
+            await HealthHub.create({
+            _id: user._id,
+            profile: profileUrl,
+            nid: req.body.nid || '',
+            pharmacyName: req.body.pharmacyName || '',
+            phanmacyReg: req.body.phanmacyReg || '',
+            country: req.body.country || '',
+            division: req.body.division || '',
+            district: req.body.district || '',
+            upazila: req.body.upazila || '',
+            category: req.body.category || '',
+            description: req.body.description || '',
+            facilities: req.body.facilities || '',
+            pharmacyImage: signatureUrl,
+            payment: {
+                service: req.body.service || '',
+                number: req.body.number || ''
+            },
+            phone: req.body.phone || '',
+            status: req.body.status || 'pending'
+            });
+
+            await PromoCode.create({
+            creatorId: user._id,
+            code: req.body.phanmacyReg,
+            percentage: 10,
+            expiryDate: ''
+            });
+        }
+        }
+
+        async function sendVerificationCode(code, username, credential, res) {
+        const method = isEmailOrPhone(credential);
+
+        if (method === "email") {
+            const message = generateEmailTemplate(code);
+            try {
+            await sendEmail({ credential, subject: "Your Verification Code From Sureline", message });
+            } catch (error) {
+                console.log(error)
+            }
+        }
+
+        if (method === "phone") {
+            try {
+            const formattedPhone = "+88" + credential;
+            const spacedCode = code.toString().split("").join(" ");
+            await client.messages.create({
+                body: `Your OTP is ${spacedCode}`,
+                from: process.env.TWILIO_PHONE_NUMBER,
+                to: formattedPhone
+            });
+            // return res.status(200).json({ success: true, message: "OTP sent to phone." });
+            } catch (error) {
+                console.log(error)
+            // throw error
+            }
+        }
+
+        // return res.status(400).json({ success: false, message: "Invalid verification method." });
+        }
+
+        function generateEmailTemplate(code) {
+        return `
+            <div style="font-family: Arial; max-width: 600px; padding: 20px; border: 1px solid #ddd; border-radius: 8px;">
+            <h2 style="color: #4CAF50;">Verification Code</h2>
+            <p>Your code is:</p>
+            <h3 style="background: #e8f5e9; color: #4CAF50; padding: 10px; border-radius: 5px; display: inline-block;">
+                ${code}
+            </h3>
+            <p>Please use this within 10 minutes.</p>
+            </div>
+        `;
+        }
+
+    } catch (err) {
+      next(err);
+    }
+  }
+ 
+
+
+);
 app.post('/api/otp-verification',async(req,res,next)=>{
     const {credential,otp}=req.body
     if(!credential){
-        return next(error("Credential Not Provide",400))
+        return next(error("Invalid Credential",400))
     }
     const checkCredential=isEmailOrPhone(credential)
     if(checkCredential=="invalid"){
-        return next(error("Invalid Phone Number",400))
+        return next(error("Invalid Credential",400))
     }
     try{
         const userAll=await User.find({
@@ -415,7 +430,6 @@ app.delete('/api/users/:id',async(req,res)=>{
     res.status(200).json({message:'User Deleted Successfully'})
 })
 
-
 /**Patient*/
 app.get('/api/patient/:id',async(req,res)=>{
     const {id}=req.params
@@ -527,13 +541,6 @@ app.get('/api/doctors/:id',async(req,res)=>{
 app.patch('/api/doctors/:id',async(req,res)=>{
     const {id}=req.params
     const updatedFormData=req.body
-    // const updateFields = Object.keys(req.body).reduce((acc, key) => {
-    //     acc[`profile.${key}`] = req.body[key];
-    //     if(key=='fee'){
-    //         acc[key]=req.body[key]
-    //     }
-    //     return acc;
-    // }, {});
     const updatedDoctor=await Doctor.findByIdAndUpdate(id,
         {$set: updatedFormData },
         {new:true}
@@ -672,7 +679,6 @@ app.patch('/api/doctors/:doctorID/schedule/:scheduleID',async(req,res)=>{
     }
 
 })
-
 //delete slot:
 app.delete("/api/doctors/:doctorID/schedule/:scheduleID/slot/:slotID", async (req, res) => {
     const { doctorID, scheduleID, slotID } = req.params;
@@ -699,7 +705,6 @@ app.delete("/api/doctors/:doctorID/schedule/:scheduleID/slot/:slotID", async (re
       res.status(500).json({ message: "Server error", error: error.message });
     }
   });
-
 /**Appointment */
 app.post('/api/appointment',async(req,res)=>{
     console.log(req.body)
@@ -1030,7 +1035,6 @@ app.post('/api/initApplyForPayment',isAuthenticated,async(req, res) => {
     })
     applyAppointmentID=applyForAppointment._id
     
-
     const data = {
         total_amount: totalFee,
         currency: 'BDT',
