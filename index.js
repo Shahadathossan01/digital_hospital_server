@@ -34,6 +34,7 @@ const crypto = require("crypto");
 const removeUnverifiedAccounts = require('./automation/removeUnverifiedAccount')
 const Blog = require('./models/Blog')
 const HealthHub = require('./models/HealthHub')
+const authorize = require('./middlewares/authorize')
 const client = require('twilio')(process.env.TWILIO_SID, process.env.TWILIO_AUTH_TOKEN);
 
 const port=process.env.PORT || 5000
@@ -47,11 +48,8 @@ app.get('/health',(req,res)=>{
 })
 
 /**Authentication */
+app.post('/api/register',upload.fields([{ name: "profile" }, { name: "signature" }]),async (req, res, next) => {
 
-app.post(
-  '/api/register',
-  upload.fields([{ name: "profile" }, { name: "signature" }]),
-  async (req, res, next) => {
     try {
       const { username, credential, password, role = "patient" } = req.body;
       if (!username || !credential || !password) {
@@ -169,9 +167,6 @@ app.post(
             signatureUrl = signatureUpload?.url || '';
             }
 
-            console.log(req.body)
-            console.log(typeof(req.body.nid))
-            console.log(profileUrl,signatureUrl)
 
             await HealthHub.create({
             _id: user._id,
@@ -256,6 +251,7 @@ app.post(
 
 
 );
+
 app.post('/api/otp-verification',async(req,res,next)=>{
     const {credential,otp}=req.body
     if(!credential){
@@ -308,6 +304,7 @@ app.post('/api/otp-verification',async(req,res,next)=>{
         next(error)
     }
 })
+
 app.post('/api/login',async(req,res,next)=>{
     const {credential,password}=req.body;
     if(!credential || !password){
@@ -324,20 +321,9 @@ app.post('/api/login',async(req,res,next)=>{
     }
     sendToken(user,200,"User Logged in successfully",res)
 })
-app.get('/api/logout',isAuthenticated,async(req,res,next)=>{
-    try{
-        if(req.user){
-            return res.status(200).json({
-                success:true,
-                message:"Logged out successfully"
-            })
-        }
-        return next(error("Unauthorized User",400))
-    }catch(e){
-        next(e)
-    }
-})
+
 app.post('/api/forgotPassword',async(req,res,next)=>{
+    console.log('forgot',req.user)
     const {credential}=req.body
     const user=await User.findOne({
         credential,
@@ -366,6 +352,7 @@ app.post('/api/forgotPassword',async(req,res,next)=>{
         return next(error(error?.message?error?.message:"Cannot send reset password token",500))
     }
 })
+
 app.put('/api/password/reset/:resetToken',async(req,res,next)=>{
     const {resetToken}=req.params
     const resetPasswordToken=crypto
@@ -394,7 +381,7 @@ app.put('/api/password/reset/:resetToken',async(req,res,next)=>{
 })
 
 /**User */
-app.get('/api/users',async(req,res,next)=>{
+app.get('/api/users',isAuthenticated,authorize(['admin']),async(req,res,next)=>{
     const users=await User.find({
         accountVerified:true
     })
@@ -417,7 +404,8 @@ app.get('/api/users',async(req,res,next)=>{
     }, Promise.resolve([]));
     res.status(200).json(allUsers)
 })
-app.delete('/api/users/:id',async(req,res)=>{
+
+app.delete('/api/users/:id',isAuthenticated,authorize(['admin']),async(req,res)=>{
     const {id}=req.params
     const deleteUser=await User.findByIdAndDelete(id)
     deleteUser?.role==='patient' && await Patient.findByIdAndDelete(id)
@@ -430,9 +418,11 @@ app.delete('/api/users/:id',async(req,res)=>{
     res.status(200).json({message:'User Deleted Successfully'})
 })
 
+
 /**Patient*/
-app.get('/api/patient/:id',async(req,res)=>{
+app.get('/api/patient/:id',isAuthenticated,authorize(['patient']),async(req,res)=>{
     const {id}=req.params
+    console.log(req.user)
     const user=await Patient.findById(id).populate({
         path: 'appointments',
         populate: [
@@ -446,7 +436,8 @@ app.get('/api/patient/:id',async(req,res)=>{
     })
     res.status(200).json(user)
 })
-app.patch('/api/patient/:id',async(req,res,error)=>{
+
+app.patch('/api/patient/:id',isAuthenticated,authorize(['patient']),async(req,res,error)=>{
     const {id}=req.params
     try{
         const updateFields = Object.keys(req.body).reduce((acc, key) => {
@@ -463,12 +454,14 @@ app.patch('/api/patient/:id',async(req,res,error)=>{
     }
     
 })
-app.delete('/api/patients/:id',async(req,res)=>{
+
+app.delete('/api/patients/:id',isAuthenticated,authorize(['patient']),async(req,res)=>{
     const {id}=req.params
     const deletedPatient=await Patient.findByIdAndDelete(id)
     res.status(200).json({message:'Deleted Successfully'})
 })
-app.patch('/api/patientAppointment/:id',async(req,res)=>{
+
+app.patch('/api/patientAppointment/:id',isAuthenticated,authorize(['patient']),async(req,res)=>{
     //Body:(appointmentID,doctorID)
     const {id}=req.params
     const {appointmentID,doctorID}=req.body
@@ -493,7 +486,8 @@ app.patch('/api/patientAppointment/:id',async(req,res)=>{
 
     res.status(200).json({message:'Updated Successfully'})
 })
-app.patch('/api/patientImage/:id',upload.single('image'),async(req,res)=>{
+
+app.patch('/api/patientImage/:id',isAuthenticated,authorize(['patient']),upload.single('image'),async(req,res)=>{
     const {id}=req.params
     const localFilePath=req.file?.path
     const cloudinaryResponse=await uploadOnCloudinary(localFilePath)
@@ -506,10 +500,11 @@ app.patch('/api/patientImage/:id',upload.single('image'),async(req,res)=>{
     res.status(200).json({message:'update successfully'})
 })
 
+
 /**Doctor */
 app.get('/api/doctors',async(req,res,next)=>{
     try{
-        const doctors=await Doctor.find().populate('applyForAppointments').populate({
+        const doctors=await Doctor.find({isValid:true}).populate('applyForAppointments').populate({
             path:'appointments',
             populate:[
                 {path:'testRecommendation'},
@@ -523,7 +518,19 @@ app.get('/api/doctors',async(req,res,next)=>{
         next(error)
     }
 })
-app.get('/api/doctors/:id',async(req,res)=>{
+
+app.get('/api/doctors/requested',isAuthenticated,authorize(['admin']),async(req,res,next)=>{
+        console.log(req.body)
+        try{
+            const doctors=await Doctor.find({isValid:false}).populate('applyForAppointments')
+            res.status(200).json(doctors)
+        }catch(e){
+            next(error)
+        }
+})
+
+app.get('/api/doctors/:id',isAuthenticated,authorize(['doctor','healthHub','patient','admin']),async(req,res)=>{
+
     const {id}=req.params
     const doctor=await Doctor.findById(id).populate('applyForAppointments').populate({
         path: 'appointments',
@@ -538,7 +545,8 @@ app.get('/api/doctors/:id',async(req,res)=>{
     })
     res.status(200).json(doctor)
 })
-app.patch('/api/doctors/:id',async(req,res)=>{
+
+app.patch('/api/doctors/:id',isAuthenticated,authorize(['doctor','admin']),async(req,res)=>{
     const {id}=req.params
     const updatedFormData=req.body
     const updatedDoctor=await Doctor.findByIdAndUpdate(id,
@@ -547,7 +555,8 @@ app.patch('/api/doctors/:id',async(req,res)=>{
     )
     res.status(200).json(updatedDoctor)
 })
-app.patch('/api/doctorSchedule/:doctorID',async(req,res)=>{
+
+app.patch('/api/doctorSchedule/:doctorID',isAuthenticated,authorize(['doctor']),async(req,res)=>{
     const {doctorID}=req.params
     const {schedule}=req.body
     const doctor=await Doctor.findById(doctorID)
@@ -568,12 +577,14 @@ app.patch('/api/doctorSchedule/:doctorID',async(req,res)=>{
     )
     res.status(200).json(updatedDoctor)
 })
-app.delete('/api/doctors/:id',async(req,res)=>{
+
+app.delete('/api/doctors/:id',isAuthenticated,authorize(['doctor']),async(req,res)=>{
     const {id}=req.params
     const deletedDoctor=await Doctor.findByIdAndDelete(id)
     res.status(200).json({message:'Deleted Successfully'})
 })
-app.patch('/api/doctorAppointment/:id',async(req,res)=>{
+
+app.patch('/api/doctorAppointment/:id',isAuthenticated,authorize(['doctor','patient']),async(req,res)=>{
     const {id}=req.params
     const {appointmentID,patientID}=req.body
     const updatedDoctorAppointment=await Doctor.findByIdAndUpdate(id,{
@@ -590,7 +601,8 @@ app.patch('/api/doctorAppointment/:id',async(req,res)=>{
     // }
     res.status(200).json({message:'Updated Successfully'})
 })
-app.patch('/api/doctorImage/:id',upload.single('image'),async(req,res)=>{
+
+app.patch('/api/doctorImage/:id',isAuthenticated,authorize(['doctor']),upload.single('image'),async(req,res)=>{
     const {id}=req.params
     const localFilePath=req.file?.path
     const cloudinaryResponse=await uploadOnCloudinary(localFilePath)
@@ -602,7 +614,8 @@ app.patch('/api/doctorImage/:id',upload.single('image'),async(req,res)=>{
     })
     res.status(200).json({message:'update successfully'})
 })
-app.patch('/api/doctorScheduleSlotStatus',async(req,res)=>{
+
+app.patch('/api/doctorScheduleSlotStatus',isAuthenticated,authorize(['doctor']),async(req,res)=>{
     const {doctorID,slotID,scheduleID,time,status}=req.body
     const result = await Doctor.updateOne(
         { 
@@ -629,7 +642,8 @@ app.patch('/api/doctorScheduleSlotStatus',async(req,res)=>{
         res.status(200).json({message:'No slot found or already updated'})
       }
 })
-app.patch('/api/doctorScheduleStatus',async(req,res)=>{
+
+app.patch('/api/doctorScheduleStatus',isAuthenticated,authorize(['doctor']),async(req,res)=>{
     const {doctorID,scheduleID,status}=req.body
     const result = await Doctor.updateOne(
         { 
@@ -655,8 +669,9 @@ app.patch('/api/doctorScheduleStatus',async(req,res)=>{
       }
 })
 
+
 //create slot:
-app.patch('/api/doctors/:doctorID/schedule/:scheduleID',async(req,res)=>{
+app.patch('/api/doctors/:doctorID/schedule/:scheduleID',isAuthenticated,authorize(['doctor']),async(req,res)=>{
     const {doctorID,scheduleID}=req.params
     try{
         const updatedResult=await Doctor.updateOne(
@@ -679,8 +694,9 @@ app.patch('/api/doctors/:doctorID/schedule/:scheduleID',async(req,res)=>{
     }
 
 })
+
 //delete slot:
-app.delete("/api/doctors/:doctorID/schedule/:scheduleID/slot/:slotID", async (req, res) => {
+app.delete("/api/doctors/:doctorID/schedule/:scheduleID/slot/:slotID",isAuthenticated,authorize(['doctor']),async (req, res) => {
     const { doctorID, scheduleID, slotID } = req.params;
   
     try {
@@ -705,8 +721,10 @@ app.delete("/api/doctors/:doctorID/schedule/:scheduleID/slot/:slotID", async (re
       res.status(500).json({ message: "Server error", error: error.message });
     }
   });
+
+
 /**Appointment */
-app.post('/api/appointment',async(req,res)=>{
+app.post('/api/appointment',isAuthenticated,authorize(['patient','healthHub']),async(req,res)=>{
     console.log(req.body)
     const {date, time, googleMeetLink, patientID, doctorID}=req.body
     try{
@@ -725,7 +743,8 @@ app.post('/api/appointment',async(req,res)=>{
         next(error)
     }
 })
-app.get('/api/appointments',async(req,res)=>{
+
+app.get('/api/appointments',isAuthenticated,authorize(['doctor','healthHub','admin','patient']),async(req,res)=>{
     const appointment=await Appointment.find().sort('-createdAt').populate('patient').populate('doctor').populate('testRecommendation').populate({
         path: 'prescription',
         populate: {
@@ -734,7 +753,8 @@ app.get('/api/appointments',async(req,res)=>{
     })
     res.status(200).json(appointment)
 })
-app.delete('/api/appointments/:id',async(req,res)=>{
+
+app.delete('/api/appointments/:id',isAuthenticated,authorize(['admin']),async(req,res)=>{
     const {id}=req.params
     const deletedAppointment=await Appointment.findByIdAndDelete(id)
     res.status(200).json({message:"Deleted Successfully!"})
@@ -744,7 +764,8 @@ app.delete('/api/appointments/:id',async(req,res)=>{
         })
     }
 })
-app.patch('/api/appointments/:id',async(req,res)=>{
+
+app.patch('/api/appointments/:id',isAuthenticated,authorize(['doctor']),async(req,res)=>{
     const {id}=req.params
     const {date,time,googleMeetLink,reqApplyedID,status}=req.body
     const updatedAppointment=await Appointment.findByIdAndUpdate(id,{
@@ -764,7 +785,8 @@ app.patch('/api/appointments/:id',async(req,res)=>{
     })
     res.status(200).json({message:'Updated Successfully',updatedAppointment})
 })
-app.get('/api/appointments/:id',async(req,res)=>{
+
+app.get('/api/appointments/:id',isAuthenticated,authorize(['patient','healthHub','doctor']),async(req,res)=>{
     const {id}=req.params
     const appointment=await Appointment.findById(id).populate('patient').populate('doctor').populate('testRecommendation').populate({
         path: 'prescription',
@@ -774,9 +796,10 @@ app.get('/api/appointments/:id',async(req,res)=>{
     })
     res.status(200).json(appointment)
 })
-app.patch('/api/appointments/status/:id',async(req,res)=>{
+
+app.patch('/api/appointments/status/:id',isAuthenticated,authorize(['doctor']),async(req,res)=>{
+    
     const {id}=req.params
-    console.log(id)
      await Appointment.findByIdAndUpdate(id,{
         $set: {
             status:"completed"
@@ -784,7 +807,8 @@ app.patch('/api/appointments/status/:id',async(req,res)=>{
     },{new:true})
     res.status(200).json({success:true,message:"updated status"})
 })
-app.patch('/api/appointments/referredPayment/:id',async(req,res)=>{
+
+app.patch('/api/appointments/referredPayment/:id',isAuthenticated,authorize(['admin']),async(req,res)=>{
     const {id}=req.params
     const {referredPayment}=req.body
      await Appointment.findByIdAndUpdate(id,{
@@ -796,8 +820,9 @@ app.patch('/api/appointments/referredPayment/:id',async(req,res)=>{
 })
 
 
+
 /**TestRecommendation */
-app.post('/api/testRecommendations',async(req,res)=>{
+app.post('/api/testRecommendations',isAuthenticated,authorize(['doctor']),async(req,res)=>{
     const {testName,image,apppintmentID}=req.body
     const testRecommendation=await TestRecommendation.create({
         testName,
@@ -811,7 +836,7 @@ app.post('/api/testRecommendations',async(req,res)=>{
     res.status(200).json(testRecommendation)
 })
 
-app.patch('/api/testRecommendations/:id',upload.single('image'),async(req,res)=>{
+app.patch('/api/testRecommendations/:id',isAuthenticated,authorize(['patient','healthHub']),upload.single('image'),async(req,res)=>{
     const {id}=req.params
     const localFilePath=req.file.path //uploads\1734292049754-download.jpeg
     const cloudinaryResponse=await uploadOnCloudinary(localFilePath)
@@ -823,14 +848,16 @@ app.patch('/api/testRecommendations/:id',upload.single('image'),async(req,res)=>
     res.status(200).json({message:'Updated Successfully',updatedTest})
 })
 
-app.delete('/api/testRecommendations/:id',async(req,res)=>{
+app.delete('/api/testRecommendations/:id',isAuthenticated,authorize(['doctor']),async(req,res)=>{
     const {id}=req.params
     const deletedTest=await TestRecommendation.findByIdAndDelete(id)
     res.status(200).json({message:'Deleted Successfully'})
 })
 
+
+
 /**Prescription */
-app.post('/api/prescriptions',async(req,res)=>{
+app.post('/api/prescriptions',isAuthenticated,authorize(['doctor']),async(req,res)=>{
     const {problem,appointmentID}=req.body
     const prescription=await Prescription.create({
         problem
@@ -847,7 +874,8 @@ app.post('/api/prescriptions',async(req,res)=>{
     // },{new:true})
     res.status(200).json(prescription)
 })
-app.patch('/api/prescriptions/:id',async(req,res)=>{
+
+app.patch('/api/prescriptions/:id',isAuthenticated,authorize(['doctor']),async(req,res)=>{
     const {id}=req.params
     console.log(id)
     const {updatedData}=req.body
@@ -863,19 +891,23 @@ app.patch('/api/prescriptions/:id',async(req,res)=>{
         console.log(e)
     }
 })
-app.delete('/api/prescriptions/:id',async(req,res)=>{
+
+app.delete('/api/prescriptions/:id',isAuthenticated,authorize(['doctor']),async(req,res)=>{
     const {id}=req.params
     await Prescription.findByIdAndDelete(id)
     res.status(200).json({message:'Deleted Successfully'})
 })
-app.get('/api/prescriptions/:id',async(req,res)=>{
+
+app.get('/api/prescriptions/:id',isAuthenticated,authorize(['doctor','patient','healthHub']),async(req,res)=>{
     const {id}=req.params
     const prescription=await Prescription.findById(id).populate("medicinInstructions")
     res.status(200).json(prescription)
 })
 
+
+
 /**MedicinInstructions */
-app.post('/api/medicinInstructions',async(req,res)=>{
+app.post('/api/medicinInstructions',isAuthenticated,authorize(['doctor']),async(req,res)=>{
     const {medicinName,dosage,frequency,duration,prescriptionID}=req.body
     const medicinInstruction=await MedicinInstruction.create({
         medicinName,
@@ -889,7 +921,8 @@ app.post('/api/medicinInstructions',async(req,res)=>{
 
     res.status(200).json(medicinInstruction)
 })
-app.patch('/api/medicinInstructions/:id',async(req,res)=>{
+
+app.patch('/api/medicinInstructions/:id',isAuthenticated,authorize(['doctor']),async(req,res)=>{
     const {id}=req.params
     const {medicinName,dosage,frequency,duration}=req.body
     const updatedMedicin=await MedicinInstruction.findByIdAndUpdate(id,{
@@ -902,14 +935,16 @@ app.patch('/api/medicinInstructions/:id',async(req,res)=>{
     },{new:true})
     res.status(200).json({message:'Updated Successfully',updatedMedicin})
 })
-app.delete('/api/medicinInstructions/:id',async(req,res)=>{
+
+app.delete('/api/medicinInstructions/:id',isAuthenticated,authorize(['doctor']),async(req,res)=>{
     const {id}=req.params
     const deletedMedicin=await MedicinInstruction.findByIdAndDelete(id)
     res.status(200).json({message:'Deleted Successfully'})
 })
 
+
 /**Apply for Appointment */
-app.post('/api/applyForAppointments',async(req,res)=>{
+app.post('/api/applyForAppointments',isAuthenticated,authorize(['patient','healthHub']),async(req,res)=>{
     const {date,patientName,doctorID,status,patientID}=req.body
     const appointment= await Appointment.create({
         patient:patientID,
@@ -932,7 +967,8 @@ app.post('/api/applyForAppointments',async(req,res)=>{
     })
     res.status(200).json(applyForAppointment)
 })
-app.patch('/api/applyForAppointments/:id',async(req,res)=>{
+
+app.patch('/api/applyForAppointments/:id',isAuthenticated,authorize(['doctor']),async(req,res)=>{
     const {id}=req.params
     const {status}=req.body
     const updatedApply=await ApplyForAppointment.findByIdAndUpdate(id,{
@@ -940,11 +976,11 @@ app.patch('/api/applyForAppointments/:id',async(req,res)=>{
     },{new:true})
     res.status(200).json({message:'Updated Successfully'})
 })
-app.delete('/api/applyForAppointments/:id',async(req,res)=>{
+
+app.delete('/api/applyForAppointments/:id',isAuthenticated,authorize(['doctor']),async(req,res)=>{
     const {id}=req.params
     const deletedApply=await ApplyForAppointment.findByIdAndDelete(id)
-    console.log(deletedApply)
-    console.log(deletedApply.appointmentID)
+
     await Appointment.findByIdAndUpdate(deletedApply.appointmentID,{
         $set:{
             status:'cancelled'
@@ -961,6 +997,7 @@ app.delete('/api/applyForAppointments/:id',async(req,res)=>{
     res.status(200).json({message:'Deleted Successfully'})
 })
 
+
 /**Medical Record */
 app.post('/api/medicalRecord',async(req,res)=>{
     const {appointmentID}=req.body
@@ -969,6 +1006,7 @@ app.post('/api/medicalRecord',async(req,res)=>{
     })
     res.status(200).json(medicalRecord)
 })
+
 app.get('/api/medicalRecord',async(req,res)=>{
     const medicalRecord=await MedicalRecord.find().populate({
         path:'medicalRecord',
@@ -984,11 +1022,12 @@ app.get('/api/medicalRecord',async(req,res)=>{
     res.status(200).json(medicalRecord)
 })
 
+
 /**SSL Commerz */
-
-app.post('/api/initApplyForPayment',isAuthenticated,async(req, res) => {
-
+app.post('/api/initApplyForPayment',isAuthenticated,authorize(['patient','healthHub']),async(req, res) => {
+    
     const {patientID='',doctorID,scheduleID,slotID,timeValue,dateValue,age,dateOfBirth,fullName,gender,height,totalFee,weight,referenceHealhtHubID=''}=req.body
+    console.log(req.body)
 
     if(!doctorID || !scheduleID || !slotID || !timeValue || !dateValue || !age || !dateOfBirth || !fullName || !gender || !height || !totalFee || !weight){
        return res.status(400).json({message:'Invalid Data! All Filled must be required.'})
@@ -1010,7 +1049,7 @@ app.post('/api/initApplyForPayment',isAuthenticated,async(req, res) => {
             height,
             weight
         },
-        patient:patientID ??undefined,
+        patient:patientID ?? undefined,
         doctor:doctorID,
         transactionId:transactionId,
         totalFee:totalFee,
@@ -1040,8 +1079,8 @@ app.post('/api/initApplyForPayment',isAuthenticated,async(req, res) => {
         currency: 'BDT',
         tran_id: transactionId, // use unique tran_id for each api call
         success_url: `${process.env.API_BASE_URL}/payment/success?applyAppointmentID=${applyAppointmentID}&doctorID=${doctorID}&scheduleID=${scheduleID}&slotID=${slotID}&transactionId=${transactionId}`,
-        fail_url: `${process.env.API_BASE_URL}/payment/fail`,
-        cancel_url: `${process.env.API_BASE_URL}/payment/cancel`,
+        fail_url: `${process.env.API_BASE_URL}/payment/fail?applyAppointmentID=${applyAppointmentID}&doctorID=${doctorID}&patientID=${patientID}&appointmentID=${appointmentID}&referenceHealhtHubID=${referenceHealhtHubID}`,
+        cancel_url: `${process.env.API_BASE_URL}/payment/cancel?applyAppointmentID=${applyAppointmentID}&doctorID=${doctorID}&patientID=${patientID}&appointmentID=${appointmentID}&referenceHealhtHubID=${referenceHealhtHubID}`,
         ipn_url: `${process.env.API_BASE_URL}/ipn`,
         shipping_method: 'Courier',
         product_name: 'Computer.',
@@ -1057,6 +1096,7 @@ app.post('/api/initApplyForPayment',isAuthenticated,async(req, res) => {
         cus_country: 'Bangladesh',
         cus_phone: '01711111111',
         cus_fax: '01711111111',
+        emi_option: 0,
         ship_name: 'Customer Name',
         ship_add1: 'Dhaka',
         ship_add2: 'Dhaka',
@@ -1088,54 +1128,83 @@ app.post('/api/initApplyForPayment',isAuthenticated,async(req, res) => {
     }
 
 
-    app.post('/payment/success',async(req,res)=>{
-        const { applyAppointmentID, doctorID, scheduleID, slotID, transactionId } = req.query;
-        
-        await ApplyForAppointment.findByIdAndUpdate(applyAppointmentID,{
-            $set:{status:'Payed'}
-        },{new:true})
-       await Doctor.updateOne(
-            { 
-              _id: doctorID, 
-              "schedule._id":scheduleID,
-              "schedule.slots._id":slotID
-            },
-            {
-              $set: {
-                "schedule.$[schedule].slots.$[slot].status": "booked",
-              }
-            },
-            {
-                arrayFilters: [{ "slot._id": slotID},{"schedule._id":scheduleID}],
-              }
-          );
-        res.redirect(`${process.env.FRONT_END_BASE_URL}/success/${transactionId}`)
-    })
-    app.post('/payment/cancel',async(req,res)=>{
-        await ApplyForAppointment.findByIdAndDelete(applyAppointmentID)
-        await Doctor.findByIdAndUpdate(doctorID,{
-            $pull:{applyForAppointments:applyAppointmentID}
-        },)
-        await Appointment.findByIdAndDelete(appointmentID)
-        await Patient.findByIdAndUpdate(patientID,{
-            $pull:{appointments:appointmentID}
-        })
-        res.redirect(`${process.env.FRONT_END_BASE_URL}/cancel`)
-    })
-    app.post('/payment/fail',async(req,res)=>{
-        await ApplyForAppointment.findByIdAndDelete(applyAppointmentID)
-        await Doctor.findByIdAndUpdate(doctorID,{
-            $pull:{applyForAppointments:applyAppointmentID}
-        },)
-        await Appointment.findByIdAndDelete(appointmentID)
-        await Patient.findByIdAndUpdate(patientID,{
-            $pull:{appointments:appointmentID}
-        })
-        res.redirect(`${process.env.FRONT_END_BASE_URL}/fail`)
-    })
 })
 
-app.post('/api/freeAppointments',async(req,res,next)=>{
+app.post('/payment/success',async(req,res)=>{
+    const { applyAppointmentID, doctorID, scheduleID, slotID, transactionId } = req.query;
+    
+    await ApplyForAppointment.findByIdAndUpdate(applyAppointmentID,{
+        $set:{status:'Payed'}
+    },{new:true})
+   await Doctor.updateOne(
+        { 
+          _id: doctorID, 
+          "schedule._id":scheduleID,
+          "schedule.slots._id":slotID
+        },
+        {
+          $set: {
+            "schedule.$[schedule].slots.$[slot].status": "booked",
+          }
+        },
+        {
+            arrayFilters: [{ "slot._id": slotID},{"schedule._id":scheduleID}],
+          }
+      );
+    res.redirect(`${process.env.FRONT_END_BASE_URL}/success/${transactionId}`)
+})
+
+app.post('/payment/cancel',async(req,res)=>{
+    const {patientID,doctorID,appointmentID,applyAppointmentID,referenceHealhtHubID}=req.query
+
+    await ApplyForAppointment.findByIdAndDelete(applyAppointmentID)
+
+    await Doctor.findByIdAndUpdate(doctorID,{
+        $pull:{applyForAppointments:applyAppointmentID}
+    },)
+
+    await Appointment.findByIdAndDelete(appointmentID)
+
+    if(patientID){
+        await Patient.findByIdAndUpdate(patientID,{
+            $pull:{appointments:appointmentID}
+        })
+    }
+
+    if(referenceHealhtHubID){
+        await HealthHub.findByIdAndDelete(referenceHealhtHubID,{
+            $pull:{appointments:appointmentID}
+        })
+    }
+    res.redirect(`${process.env.FRONT_END_BASE_URL}/cancel`)
+})
+
+app.post('/payment/fail',async(req,res)=>{
+     const {patientID,doctorID,appointmentID,applyAppointmentID,referenceHealhtHubID}=req.query
+
+    await ApplyForAppointment.findByIdAndDelete(applyAppointmentID)
+
+    await Doctor.findByIdAndUpdate(doctorID,{
+        $pull:{applyForAppointments:applyAppointmentID}
+    },)
+
+    await Appointment.findByIdAndDelete(appointmentID)
+
+    if(patientID){
+        await Patient.findByIdAndUpdate(patientID,{
+            $pull:{appointments:appointmentID}
+        })
+    }
+
+    if(referenceHealhtHubID){
+        await HealthHub.findByIdAndDelete(referenceHealhtHubID,{
+            $pull:{appointments:appointmentID}
+        })
+    }
+    res.redirect(`${process.env.FRONT_END_BASE_URL}/fail`)
+})
+
+app.post('/api/freeAppointments',isAuthenticated,authorize(['patient','healthHub']),async(req,res,next)=>{
 
     const {patientID='',doctorID,scheduleID,slotID,timeValue,dateValue,age,dateOfBirth,fullName,gender,height,totalFee,weight,referenceHealhtHubID=''}=req.body
 
@@ -1226,8 +1295,7 @@ app.post('/api/freeAppointments',async(req,res,next)=>{
 
 
 /**PromoCode */
-
-app.post('/api/promoCode',async(req,res,next)=>{
+app.post('/api/promoCode',isAuthenticated,authorize(['admin']),async(req,res,next)=>{
     const {creatorId,code,percentage,expiryDate,usageLimit}=req.body;
     const promoCode=await PromoCode.findOne({code})
     if(promoCode){
@@ -1244,7 +1312,8 @@ app.post('/api/promoCode',async(req,res,next)=>{
 
     return res.status(200).json({message:"promoCode created successfully",newPromoCode})
 })
-app.post('/api/promoCodeValidate',async(req,res,next)=>{
+
+app.post('/api/promoCodeValidate',isAuthenticated,authorize(['patient','healthHub']),async(req,res,next)=>{
     const {code,userId}=req.body
     const user=await User.findById({_id:userId})
     const promoCode=await PromoCode.findOne({code}).populate('creatorId')
@@ -1275,7 +1344,8 @@ app.post('/api/promoCodeValidate',async(req,res,next)=>{
     //     return res.status(400).json({valid:false,message:"Promo code user is over"})
     // }
 })
-app.get('/api/promoCodes/:userId',async(req,res,next)=>{
+
+app.get('/api/promoCodes/:userId',isAuthenticated,authorize(['patient','healthHub']),async(req,res,next)=>{
     const {userId}=req.params
     try{
         const promoCode=await PromoCode.findOne({creatorId:userId})
@@ -1287,7 +1357,8 @@ app.get('/api/promoCodes/:userId',async(req,res,next)=>{
         res.status(400).json({error:e.message})
     }
 })
-app.get('/api/promoCodes',async(req,res,next)=>{
+
+app.get('/api/promoCodes',isAuthenticated,authorize(['admin']),async(req,res,next)=>{
     try{
         const promoCodes=await PromoCode.find()
         res.status(200).json(promoCodes)
@@ -1295,7 +1366,8 @@ app.get('/api/promoCodes',async(req,res,next)=>{
         next(e)
     }
 })
-app.delete('/api/promoCodes/:id',async(req,res,next)=>{
+
+app.delete('/api/promoCodes/:id',isAuthenticated,authorize(['admin']),async(req,res,next)=>{
     const{id}=req.params
     try{
         const deletedPromo=await PromoCode.findByIdAndDelete(id)
@@ -1307,7 +1379,8 @@ app.delete('/api/promoCodes/:id',async(req,res,next)=>{
         next(e)
     }
 })
-app.patch('/api/promoCodes/:id',async(req,res,next)=>{
+
+app.patch('/api/promoCodes/:id',isAuthenticated,authorize(['admin']),async(req,res,next)=>{
     const {id}=req.params;
     const promoCode=await PromoCode.findOne({code:req.body?.code})
     if(promoCode){
@@ -1329,9 +1402,9 @@ app.patch('/api/promoCodes/:id',async(req,res,next)=>{
     }
 })
 
-/**Blog */
 
-app.post('/api/blogs',upload.single('image'),async(req,res)=>{
+/**Blog */
+app.post('/api/blogs',isAuthenticated,authorize(['admin']),upload.single('image'),async(req,res)=>{
     const localFilePath=req.file?.path
     const cloudinaryResponse=await uploadOnCloudinary(localFilePath)
     const imageUrl=cloudinaryResponse.url
@@ -1348,6 +1421,7 @@ app.post('/api/blogs',upload.single('image'),async(req,res)=>{
         res.status(400).json({error:e.message})
     }
 })
+
 app.get('/api/blogs',async(req,res,next)=>{
     try {
         const blogs = await Blog.find().sort({ createdAt: -1 });
@@ -1356,6 +1430,7 @@ app.get('/api/blogs',async(req,res,next)=>{
         res.status(500).json({ error: error.message });
     }
 })
+
 app.get('/api/blogs/:id',async(req,res,next)=>{
     const {id}=req.params
     try {
@@ -1366,7 +1441,8 @@ app.get('/api/blogs/:id',async(req,res,next)=>{
         res.status(500).json({ error: error.message });
     }
 })
-app.patch('/api/blogs/:id',upload.single('image'),async(req,res)=>{
+
+app.patch('/api/blogs/:id',isAuthenticated,authorize(['admin']),upload.single('image'),async(req,res)=>{
     const {id}=req.params
     const blog=await Blog.findById(id)
     if(!blog){
@@ -1386,7 +1462,8 @@ app.patch('/api/blogs/:id',upload.single('image'),async(req,res)=>{
     await blog.save()
     res.status(200).json({message:'updated successfully'})
 })
-app.delete('/api/blogs/:id',async(req,res,next)=>{
+
+app.delete('/api/blogs/:id',isAuthenticated,authorize(['admin']),async(req,res,next)=>{
     const {id}=req.params
     try {
         const deletedBlog = await Blog.findByIdAndDelete(id);
@@ -1397,8 +1474,9 @@ app.delete('/api/blogs/:id',async(req,res,next)=>{
     }
 })
 
+
 /**Health Hub */
-app.get('/api/healthHub',async(req,res,next)=>{
+app.get('/api/healthHub',isAuthenticated,authorize(['patient','healthHub']),async(req,res,next)=>{
     try {
         const healthHub = await HealthHub.find().sort({ createdAt: -1 });
         res.status(200).json(healthHub);
@@ -1406,7 +1484,8 @@ app.get('/api/healthHub',async(req,res,next)=>{
         res.status(500).json({ error: error.message });
     }
 })
-app.get('/api/healthHub/:id',async(req,res,next)=>{
+
+app.get('/api/healthHub/:id',isAuthenticated,authorize(['healthHub']),async(req,res,next)=>{
     const {id}=req.params
     try {
         const healthHub = await HealthHub.findById(id).populate({
@@ -1426,7 +1505,9 @@ app.get('/api/healthHub/:id',async(req,res,next)=>{
         res.status(500).json({ error: error.message });
     }
 })
-app.patch('/api/healthHub/:id',upload.fields([{ name: "profile" }, { name: "signature" }]),async(req,res)=>{
+
+app.patch('/api/healthHub/:id',isAuthenticated,authorize(['healthHub']),upload.fields([{ name: "profile" }, { name: "signature" }]),async(req,res)=>{
+    
     const {
         nid,
         pharmacyName,
@@ -1444,6 +1525,7 @@ app.patch('/api/healthHub/:id',upload.fields([{ name: "profile" }, { name: "sign
         service,
         number
     }=req.body
+    
     const {id}=req.params
     const healthHub=await HealthHub.findById(id)
     if(!healthHub){
@@ -1481,10 +1563,11 @@ app.patch('/api/healthHub/:id',upload.fields([{ name: "profile" }, { name: "sign
         pharmacyImage:pharmacyImage || null,
         phone:phone || null,
         status:status || null,
-        facilities:facilities || [],
+        facilities:facilities || null,
         profile:profileUrl || null,
         pharmacyImage:signatureUrl || null
     }
+
     Object.keys(payload).forEach((key)=>{
         healthHub[key]=payload[key] ?? healthHub[key]
     })
@@ -1493,7 +1576,8 @@ app.patch('/api/healthHub/:id',upload.fields([{ name: "profile" }, { name: "sign
     await healthHub.save()
     res.status(200).json({message:'updated successfully'})
 })
-app.get('/api/healthHub/:id/refAppointments', async (req, res, next) => {
+
+app.get('/api/healthHub/:id/refAppointments',isAuthenticated,authorize(['healthHub']),async (req, res, next) => {
     const { id } = req.params;
     try {
       const healthHub = await HealthHub.findOne({ _id: id });
@@ -1527,7 +1611,7 @@ app.get('/api/healthHub/:id/refAppointments', async (req, res, next) => {
     }
   });
   
-app.get('/api/allRefAppointments', async (req, res) => {
+app.get('/api/allRefAppointments',isAuthenticated,authorize(['admin']),async (req, res) => {
     try {
       const appointments = await Appointment.find({ referenceHealhtHubID: { $exists: true, $ne: null } }).sort('-createdAt').populate('patient').populate('doctor');
   
