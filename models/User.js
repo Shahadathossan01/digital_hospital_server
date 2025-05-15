@@ -5,9 +5,11 @@ const jwt = require('jsonwebtoken');
 const crypto = require("crypto");
 const UserSchema=new Schema({
     username:String,
-    credential:String,
+    credential:{
+        type: String,
+        unique:true
+    },
     password:String,
-    rowPass:String,
     accountVerified: { type: Boolean, default: false },
     verificationCode: Number,
     verificationCodeExpire: Date,

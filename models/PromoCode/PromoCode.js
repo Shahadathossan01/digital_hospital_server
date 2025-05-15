@@ -14,20 +14,7 @@ const promoCodeSchema=new Schema({
     percentage:{
         type:Number,
         require:true
-    },
-    expiryDate:{
-        type:Date,
-    },
-    usageLimit:{
-        type:Number,
-        default:1
-    },
-    users: [
-        {
-            type: Schema.Types.ObjectId,
-            ref: "User" // Assuming your user model is named "User"
-        }
-    ]
+    }
 })
 const PromoCode=model("PromoCode",promoCodeSchema)
 

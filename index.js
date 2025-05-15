@@ -85,7 +85,6 @@ app.post('/api/register',upload.fields([{ name: "profile" }, { name: "signature"
         credential,
         password,
         role,
-        rowPass: password
       });
 
       const verificationCode = await user.generateVerificationCode();
@@ -100,6 +99,8 @@ app.post('/api/register',upload.fields([{ name: "profile" }, { name: "signature"
         });
 
       async function handleRoleSpecificTasks(user, req) {
+
+        if(!user) return null
         const { role } = user;
 
 
@@ -151,6 +152,7 @@ app.post('/api/register',upload.fields([{ name: "profile" }, { name: "signature"
         }
 
         if (role === "healthHub") {
+            const generateCode = Math.random().toString(36).substring(2, 10).toUpperCase();
             const profilePath = req?.files?.profile?.[0]?.path;
             const signaturePath = req?.files?.signature?.[0]?.path;
 
@@ -190,11 +192,12 @@ app.post('/api/register',upload.fields([{ name: "profile" }, { name: "signature"
             status: req.body.status || 'pending'
             });
 
+            const existingPromocode=await PromoCode.findOne({code:req.body.phanmacyReg})
+
             await PromoCode.create({
             creatorId: user._id,
-            code: req.body.phanmacyReg,
-            percentage: 10,
-            expiryDate: ''
+            code: existingPromocode? generateCode : req.body.phanmacyReg,
+            percentage: 10
             });
         }
         }
@@ -384,7 +387,7 @@ app.put('/api/password/reset/:resetToken',async(req,res,next)=>{
 app.get('/api/users',isAuthenticated,authorize(['admin']),async(req,res,next)=>{
     const users=await User.find({
         accountVerified:true
-    })
+    }).select('-password -resetPasswordToken -resetPasswordExpire -verificationCode -verificationCodeExpire')
 
     const allUsers = await users.reduce(async (accPromise, cur) => {
         const acc = await accPromise;
@@ -407,14 +410,17 @@ app.get('/api/users',isAuthenticated,authorize(['admin']),async(req,res,next)=>{
 
 app.delete('/api/users/:id',isAuthenticated,authorize(['admin']),async(req,res)=>{
     const {id}=req.params
-    const deleteUser=await User.findByIdAndDelete(id)
-    deleteUser?.role==='patient' && await Patient.findByIdAndDelete(id)
-    deleteUser?.role==='doctor' && await Doctor.findByIdAndDelete(id)
-    // deleteUser.role==='admin' && await Admin.findByIdAndDelete(id)
-    if(deleteUser?.role==='healthHub'){
+    const user=await User.findById(id)
+    user?.role==='patient' && await Patient.findByIdAndDelete(id)
+    user?.role==='doctor' && await Doctor.findByIdAndDelete(id)
+
+    if(user?.role==='healthHub'){
         await HealthHub.findByIdAndDelete(id)
         await PromoCode.deleteOne({ creatorId:id });
     }
+
+    await User.findByIdAndDelete(id)
+    
     res.status(200).json({message:'User Deleted Successfully'})
 })
 
@@ -422,7 +428,7 @@ app.delete('/api/users/:id',isAuthenticated,authorize(['admin']),async(req,res)=
 /**Patient*/
 app.get('/api/patient/:id',isAuthenticated,authorize(['patient']),async(req,res)=>{
     const {id}=req.params
-    console.log(req.user)
+    
     const user=await Patient.findById(id).populate({
         path: 'appointments',
         populate: [
@@ -520,9 +526,14 @@ app.get('/api/doctors',async(req,res,next)=>{
 })
 
 app.get('/api/doctors/requested',isAuthenticated,authorize(['admin']),async(req,res,next)=>{
-        console.log(req.body)
+        
         try{
-            const doctors=await Doctor.find({isValid:false}).populate('applyForAppointments')
+            const verifiedUserIds = await User.find({ accountVerified: true }, '_id');
+
+            const doctors = await Doctor.find({
+            isValid: false,
+            _id: { $in: verifiedUserIds.map(user => user._id) }
+            })
             res.status(200).json(doctors)
         }catch(e){
             next(error)
@@ -818,7 +829,6 @@ app.patch('/api/appointments/referredPayment/:id',isAuthenticated,authorize(['ad
     },{new:true})
     res.status(200).json({success:true,message:"updated referredPayment"})
 })
-
 
 
 /**TestRecommendation */
@@ -1297,7 +1307,8 @@ app.post('/api/freeAppointments',isAuthenticated,authorize(['patient','healthHub
 /**PromoCode */
 app.post('/api/promoCode',isAuthenticated,authorize(['admin']),async(req,res,next)=>{
     const {creatorId,code,percentage,expiryDate,usageLimit}=req.body;
-    const promoCode=await PromoCode.findOne({code})
+    try{
+        const promoCode=await PromoCode.findOne({code})
     if(promoCode){
         return res.status(400).json({message:"Already use this promoCode"})
     }
@@ -1305,12 +1316,13 @@ app.post('/api/promoCode',isAuthenticated,authorize(['admin']),async(req,res,nex
     const newPromoCode=await PromoCode.create({
         creatorId,
         code,
-        percentage,
-        expiryDate,
-        usageLimit
+        percentage
     })
 
     return res.status(200).json({message:"promoCode created successfully",newPromoCode})
+    }catch(e){
+        next(e)
+    }
 })
 
 app.post('/api/promoCodeValidate',isAuthenticated,authorize(['patient','healthHub']),async(req,res,next)=>{
@@ -1360,8 +1372,40 @@ app.get('/api/promoCodes/:userId',isAuthenticated,authorize(['patient','healthHu
 
 app.get('/api/promoCodes',isAuthenticated,authorize(['admin']),async(req,res,next)=>{
     try{
-        const promoCodes=await PromoCode.find()
-        res.status(200).json(promoCodes)
+        const promoCodes=await PromoCode.find().populate('creatorId')
+
+    // Step 2: Filter only creatorIds that are healthHub role
+    const healthHubCreators = promoCodes.filter(
+      promo => promo.creatorId?.role === 'healthHub'
+    ).map(promo => promo.creatorId._id);
+
+    // Step 3: Get healthHub data for those users
+    const healthHubs = await HealthHub.find({ _id: { $in: healthHubCreators } });
+
+    // Step 4: Create a map for quick access
+    const healthHubMap = new Map(healthHubs.map(h => [h._id.toString(), h]));
+
+    // Step 5: Merge healthHub info into each promoCode (if applicable)
+    const payload = promoCodes.map(promo => {
+      const creatorIdStr = promo.creatorId?._id?.toString();
+      const healthHub = promo.creatorId?.role === 'healthHub' ? healthHubMap.get(creatorIdStr) : null;
+
+      return {
+        _id:promo?._id,
+        code:promo.code,
+        percentage:promo.percentage,
+        author:{
+            username:promo?.creatorId.username,
+            role:promo?.creatorId?.role
+        },
+        healthHub: healthHub ? {
+          pharmacyName: healthHub.pharmacyName,
+          
+        } : null
+      };
+    });
+ 
+        res.status(200).json(payload)
     }catch(e){
         next(e)
     }
@@ -1380,8 +1424,12 @@ app.delete('/api/promoCodes/:id',isAuthenticated,authorize(['admin']),async(req,
     }
 })
 
-app.patch('/api/promoCodes/:id',isAuthenticated,authorize(['admin']),async(req,res,next)=>{
+app.patch('/api/promoCodes/:id',isAuthenticated,authorize(['admin','healthHub']),async(req,res,next)=>{
     const {id}=req.params;
+    const exitPromocode=await PromoCode.findById(id)
+    if(!exitPromocode){
+        res.status(404).json({message:'Not Found Any Promocode!'})
+    }
     const promoCode=await PromoCode.findOne({code:req.body?.code})
     if(promoCode){
         res.status(400).json({message:'This code is already used!'})
@@ -1613,14 +1661,40 @@ app.get('/api/healthHub/:id/refAppointments',isAuthenticated,authorize(['healthH
   
 app.get('/api/allRefAppointments',isAuthenticated,authorize(['admin']),async (req, res) => {
     try {
-      const appointments = await Appointment.find({ referenceHealhtHubID: { $exists: true, $ne: null } }).sort('-createdAt').populate('patient').populate('doctor');
-  
+      const appointments = await Appointment.find({ referenceHealhtHubID: { $exists: true, $ne: null } }).sort('-createdAt').populate('referenceHealhtHubID')
+
       res.status(200).json(appointments);
     } catch (error) {
       console.error('Error fetching reference appointments:', error);
       res.status(500).json({ message: 'Server error' });
     }
   });
+
+
+  /**Admin */
+  app.post('/api/setupAdmin',isAuthenticated,authorize(['admin']),async (req, res) => {
+      const { username, credential, password } = req.body;
+      try{
+        const existingAdmin = await User.findOne({credential:credential});
+    if (existingAdmin) return res.status(400).json({ message: 'Already used this email.'});
+
+        const admin=new User({
+            username: username,
+            credential: credential,
+            password: password,
+            accountVerified:true,
+            role:'admin'
+        })
+
+        await admin.save()
+        res.status(201).json({ message: 'Admin created' });
+      }catch(e){
+        res.status(400).json({error:e.message})
+      }
+
+});
+
+
 
 app.use((err,req,res,next)=>{
     const message=err.message?err.message:'Server Error Occurred';
@@ -1630,7 +1704,22 @@ app.use((err,req,res,next)=>{
 
 removeUnverifiedAccounts()
 connectDB(databaseUrl)
-.then(()=>{
+.then(async()=>{
+
+    const existingAdmin=await User.findOne({role:'admin'})
+
+    if(!existingAdmin) {
+        const admin=new User({
+            username: process.env.ADMIN_USERNAME,
+            credential: process.env.ADMIN_CREDENTIAL,
+            password: process.env.ADMIN_PASSWORD,
+            accountVerified:true,
+            role:'admin'
+        })
+
+        await admin.save()
+    }
+
     app.listen(port,()=>{
         console.log('server is running!')
     })
