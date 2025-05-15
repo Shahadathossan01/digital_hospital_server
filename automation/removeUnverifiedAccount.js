@@ -6,7 +6,7 @@ const HealthHub = require('../models/HealthHub');
 const PromoCode = require('../models/PromoCode/PromoCode');
 
 const removeUnverifiedAccounts = () => {
-  cron.schedule('*/5 * * * *', async () => {
+  cron.schedule('*/30 * * * *', async () => {
     try {
       // const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
 

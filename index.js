@@ -326,7 +326,7 @@ app.post('/api/login',async(req,res,next)=>{
 })
 
 app.post('/api/forgotPassword',async(req,res,next)=>{
-    console.log('forgot',req.user)
+
     const {credential}=req.body
     const user=await User.findOne({
         credential,
@@ -382,6 +382,51 @@ app.put('/api/password/reset/:resetToken',async(req,res,next)=>{
     await user.save()
     sendToken(user,200,"Reset Password Successfully.",res)
 })
+
+
+/**Forced Password */
+app.patch('/api/users/:id/forceResetPassword',isAuthenticated,authorize(['admin']),async (req, res) => {
+
+    const {id}=req.params
+    const {tempPassword } = req.body
+
+  try {
+    const user = await User.findById(id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    user.password = tempPassword; // Will be hashed via pre-save hook
+    user.forcePasswordReset = true;
+    await user.save();
+    console.log(user)
+
+    res.json({success:true, message: "Temporary password set. User will be prompted to reset on login." });
+  } catch (err) {
+    res.status(500).json({ message: "Something went wrong" });
+  }
+})
+
+
+/**completeForcedReset */
+app.patch('/api/users/completeForcedReset',isAuthenticated,authorize(['patient']),async (req, res) => {
+
+  const {newPassword,credential} = req.body;
+  
+  try {
+    const user = await User.findOne({credential});
+    console.log(user)
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    user.password = newPassword;
+    user.forcePasswordReset = false; // ✅ Disable forced reset
+    await user.save();
+
+    res.json({success:true,user,message: "Password updated successfully." });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to update password." });
+  }
+})
+
+
 
 /**User */
 app.get('/api/users',isAuthenticated,authorize(['admin']),async(req,res,next)=>{
@@ -540,7 +585,7 @@ app.get('/api/doctors/requested',isAuthenticated,authorize(['admin']),async(req,
         }
 })
 
-app.get('/api/doctors/:id',isAuthenticated,authorize(['doctor','healthHub','patient','admin']),async(req,res)=>{
+app.get('/api/doctors/:id',async(req,res)=>{
 
     const {id}=req.params
     const doctor=await Doctor.findById(id).populate('applyForAppointments').populate({

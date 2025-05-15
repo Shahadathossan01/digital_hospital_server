@@ -5,7 +5,8 @@ const sendToken = (user, statusCode, message, res) => {
     username:user?.username,
     credential:user?.credential,
     role:user?.role,
-    accountVerified:user?.accountVerified
+    accountVerified:user?.accountVerified,
+    forcePasswordReset: user.forcePasswordReset
     }
     res
       .status(statusCode)

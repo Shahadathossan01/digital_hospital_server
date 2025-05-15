@@ -3,7 +3,7 @@ const error = require("../utils/error")
 const jwt = require('jsonwebtoken');
 const isAuthenticated=async(req,_res,next)=>{
 	let token = req.headers.authorization;
-	
+
 	token = token?.split(' ')[1];
 	
 	if (!token) {

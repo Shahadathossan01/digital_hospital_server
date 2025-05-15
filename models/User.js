@@ -22,7 +22,11 @@ const UserSchema=new Schema({
     role:{
         type:String,
         default:'patient'
-    }
+    },
+    forcePasswordReset: {
+    type: Boolean,
+    default: false,
+  },
 })
 
 UserSchema.pre("save",async function(next){
