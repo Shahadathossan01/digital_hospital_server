@@ -1419,6 +1419,8 @@ app.get('/api/promoCodes',isAuthenticated,authorize(['admin']),async(req,res,nex
     try{
         const promoCodes=await PromoCode.find().populate('creatorId')
 
+        if(promoCodes.length===0) return null
+
     // Step 2: Filter only creatorIds that are healthHub role
     const healthHubCreators = promoCodes.filter(
       promo => promo.creatorId?.role === 'healthHub'
@@ -1437,10 +1439,10 @@ app.get('/api/promoCodes',isAuthenticated,authorize(['admin']),async(req,res,nex
 
       return {
         _id:promo?._id,
-        code:promo.code,
-        percentage:promo.percentage,
+        code:promo?.code,
+        percentage:promo?.percentage,
         author:{
-            username:promo?.creatorId.username,
+            username:promo?.creatorId?.username,
             role:promo?.creatorId?.role
         },
         healthHub: healthHub ? {
@@ -1569,9 +1571,10 @@ app.delete('/api/blogs/:id',isAuthenticated,authorize(['admin']),async(req,res,n
 
 
 /**Health Hub */
-app.get('/api/healthHub',isAuthenticated,authorize(['patient','healthHub']),async(req,res,next)=>{
+app.get('/api/healthHub',async(req,res,next)=>{
     try {
         const healthHub = await HealthHub.find().sort({ createdAt: -1 });
+        
         res.status(200).json(healthHub);
     } catch (error) {
         res.status(500).json({ error: error.message });

@@ -11,8 +11,9 @@ const isAuthenticated=async(req,_res,next)=>{
 	}
     try {
 		const decoded = jwt.verify(token, process.env.JWT_SECRET_KEY);
+		
 		const user = await User.findById({_id:decoded.id});
-
+		
 		if (!user) {
 			return next(error("Unauthorized",400))
 		}
