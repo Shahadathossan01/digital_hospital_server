@@ -28,7 +28,7 @@ const { sendEmail } = require('./utils/sendEmail')
 const { twiml } = require('twilio')
 const sendToken = require('./utils/sendToken')
 const isAuthenticated = require('./middlewares/isAuthenticated')
-app.use(cors())
+app.use(cors()) //TODO
 app.use(express.json())
 const crypto = require("crypto");
 const removeUnverifiedAccounts = require('./automation/removeUnverifiedAccount')
@@ -194,11 +194,17 @@ app.post('/api/register',upload.fields([{ name: "profile" }, { name: "signature"
 
             const existingPromocode=await PromoCode.findOne({code:req.body.phanmacyReg})
 
-            await PromoCode.create({
-            creatorId: user._id,
-            code: existingPromocode? generateCode : req.body.phanmacyReg,
-            percentage: 10
-            });
+            // await PromoCode.create({
+            // creatorId: user._id,
+            // code: existingPromocode? generateCode : req.body.phanmacyReg,
+            // percentage: 10
+            // });
+
+            await PromoCode.updateOne(
+            { code: req.body.phanmacyReg },
+            { $setOnInsert: { creatorId: user._id, percentage: 10 } },
+            { upsert: true }
+            );
         }
         }
 
