@@ -100,9 +100,6 @@ app.post('/api/register',upload.fields([{ name: "profile" }, { name: "signature"
 
       async function handleRoleSpecificTasks(user, req) {
 
-        if(!user) return null
-        const { role } = user;
-
 
         if (role === "patient") {
             return await Patient.create({ _id: user._id, image: '' });
@@ -111,8 +108,6 @@ app.post('/api/register',upload.fields([{ name: "profile" }, { name: "signature"
         if (role === "doctor") {
             const profilePath = req?.files?.profile?.[0]?.path;
             const signaturePath = req?.files?.signature?.[0]?.path;
-            console.log(profilePath)
-            console.log(signaturePath)
             let profileUrl = '';
             let signatureUrl = '';
 
@@ -202,7 +197,7 @@ app.post('/api/register',upload.fields([{ name: "profile" }, { name: "signature"
             // });
 
             await PromoCode.updateOne(
-            { code: req.body.phanmacyReg },
+            { code: existingPromocode? generateCode : req.body.phanmacyReg },
             { $setOnInsert: { creatorId: user._id, percentage: 10 } },
             { upsert: true }
             );
