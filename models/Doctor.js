@@ -19,7 +19,7 @@ const doctorSchema=new Schema({
     lastName:String,
     dateOfBirth:String,
     mobile:Number,
-    nidOrPassport:Number,
+    nidOrPassport:String,
     nationality:String,
     gender:String,
     fee:Number,

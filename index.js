@@ -49,7 +49,7 @@ app.get('/health',(req,res)=>{
 
 /**Authentication */
 app.post('/api/register',upload.fields([{ name: "profile" }, { name: "signature" }]),async (req, res, next) => {
-
+        console.log(req.body)
     try {
       const { username, credential, password, role = "patient" } = req.body;
       if (!username || !credential || !password) {
@@ -111,7 +111,8 @@ app.post('/api/register',upload.fields([{ name: "profile" }, { name: "signature"
         if (role === "doctor") {
             const profilePath = req?.files?.profile?.[0]?.path;
             const signaturePath = req?.files?.signature?.[0]?.path;
-
+            console.log(profilePath)
+            console.log(signaturePath)
             let profileUrl = '';
             let signatureUrl = '';
 
@@ -155,7 +156,7 @@ app.post('/api/register',upload.fields([{ name: "profile" }, { name: "signature"
             const generateCode = Math.random().toString(36).substring(2, 10).toUpperCase();
             const profilePath = req?.files?.profile?.[0]?.path;
             const signaturePath = req?.files?.signature?.[0]?.path;
-
+       
             let profileUrl = '';
             let signatureUrl = '';
 
