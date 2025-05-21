@@ -49,7 +49,7 @@ app.get('/health',(req,res)=>{
 
 /**Authentication */
 app.post('/api/register',upload.fields([{ name: "profile" }, { name: "signature" }]),async (req, res, next) => {
-        console.log(req.body)
+    console.log(req.body)
     try {
       const { username, credential, password, role = "patient" } = req.body;
       if (!username || !credential || !password) {
@@ -57,14 +57,16 @@ app.post('/api/register',upload.fields([{ name: "profile" }, { name: "signature"
       }
 
       if (role === "healthHub") {
-
+          console.log('checking for image')
           const existingPharmacyReg = await HealthHub.findOne({ phanmacyReg: req.body.phanmacyReg });
           if (existingPharmacyReg) {
+              console.log('check pharmacy reg,,',existingPharmacyReg)
             return res.status(400).json({ field:'pharmacyReg',message: "Pharmacy Registration already exists" });
           }
 
         const existingNid = await HealthHub.findOne({ nid: req.body.nid });
         if (existingNid) {
+            console.log('check pharmacy nid',existingNid)
           return res.status(400).json({ field:'nid',message: "NID already exists" });
         }
 
@@ -72,6 +74,7 @@ app.post('/api/register',upload.fields([{ name: "profile" }, { name: "signature"
 
       const existingUser = await User.findOne({ credential, accountVerified: true });
       if (existingUser) {
+        console.log('check user',existingUser)
         return res.status(400).json({ field: "credential", message: "Email already in use!" });
       }
 
@@ -148,10 +151,12 @@ app.post('/api/register',upload.fields([{ name: "profile" }, { name: "signature"
         }
 
         if (role === "healthHub") {
+            console.log('called healhhub createing stage')
             const generateCode = Math.random().toString(36).substring(2, 10).toUpperCase();
             const profilePath = req?.files?.profile?.[0]?.path;
             const signaturePath = req?.files?.signature?.[0]?.path;
-       
+            console.log(profilePath)
+            console.log(signaturePath)
             let profileUrl = '';
             let signatureUrl = '';
 
@@ -165,7 +170,8 @@ app.post('/api/register',upload.fields([{ name: "profile" }, { name: "signature"
             signatureUrl = signatureUpload?.url || '';
             }
 
-
+            console.log('profile clud url',profileUrl)
+            console.log('sign clud url',signatureUrl)
             await HealthHub.create({
             _id: user._id,
             profile: profileUrl,
